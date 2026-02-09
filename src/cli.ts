@@ -3,6 +3,7 @@ import { parseArgs } from "util";
 import { resolve } from "path";
 import { existsSync, readFileSync, fstatSync } from "fs";
 import { createInterface } from "readline";
+import { ok, err, type Result } from "neverthrow";
 import { calculatePayroll, setVerbose, craService, type PayrollConfig } from "./calculator";
 import { calculateYearly, PAY_PERIOD_COUNTS } from "./yearly";
 import { checkForUpdate, selfUpdate, currentVersion } from "./updater";
@@ -129,8 +130,6 @@ const prompt = (question: string): Promise<string> =>
     rl.question(question, (answer) => res(answer.trim()));
   });
 
-const closePrompt = () => rl.close();
-
 const promptChoice = async (label: string, choices: string[], defaultVal?: string): Promise<string> => {
   console.error(`\n${label}`);
   choices.forEach((c, i) => console.error(`  ${i + 1}) ${c}`));
@@ -165,34 +164,24 @@ const promptYesNo = async (label: string, defaultVal: boolean = false): Promise<
   return answer.toLowerCase().startsWith("y");
 };
 
-// ── Load config: piped stdin → --config → ./config.json → ~/.cra-payroll.json ──
+// ── Config loading ───────────────────────────────────────────
 
-let fileConfig: Partial<PayrollConfig> = {};
+const detectPipedStdin = (): boolean => {
+  try { return fstatSync(0).isFIFO(); } catch { return false; }
+};
 
-// Bun doesn't reliably set process.stdin.isTTY — use fstat to detect piped stdin
-let isPiped = false;
-try {
-  isPiped = fstatSync(0).isFIFO();
-} catch {}
-
-if (isPiped) {
-  try {
-    const chunks: Buffer[] = [];
-    for await (const chunk of process.stdin) {
-      chunks.push(chunk);
-    }
-    const raw = Buffer.concat(chunks).toString("utf-8").trim();
-    if (raw) fileConfig = JSON.parse(raw);
-  } catch (e: any) {
-    console.error(`❌ Could not parse piped stdin as JSON: ${e.message}`);
-    process.exit(1);
+const readStdinConfig = async (): Promise<Partial<PayrollConfig>> => {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(chunk);
   }
-}
+  const raw = Buffer.concat(chunks).toString("utf-8").trim();
+  return raw ? JSON.parse(raw) : {};
+};
 
-// Fall back to config files if nothing was piped
-if (Object.keys(fileConfig).length === 0) {
+const readFileConfig = (configFlag: string): Partial<PayrollConfig> => {
   const configPaths = [
-    values.config ? resolve(values.config) : "",
+    configFlag ? resolve(configFlag) : "",
     resolve("config.json"),
     resolve(process.env.HOME || "~", ".config", "cra-payroll.json"),
     resolve(process.env.HOME || "~", ".cra-payroll.json"),
@@ -200,33 +189,42 @@ if (Object.keys(fileConfig).length === 0) {
 
   for (const p of configPaths) {
     if (p && existsSync(p)) {
-      try {
-        fileConfig = JSON.parse(readFileSync(p, "utf-8"));
-        break;
-      } catch (e: any) {
-        console.error(`❌ Failed to parse config file ${p}: ${e.message}`);
-        process.exit(1);
-      }
+      return JSON.parse(readFileSync(p, "utf-8"));
     }
   }
 
-  // If --config was explicitly passed but file wasn't found, that's an error
-  if (values.config && Object.keys(fileConfig).length === 0) {
-    console.error(`❌ Config file not found: ${resolve(values.config)}`);
-    process.exit(1);
+  return {};
+};
+
+const loadFileConfig = async (configFlag: string, isPiped: boolean): Promise<Result<Partial<PayrollConfig>, string>> => {
+  if (isPiped) {
+    try {
+      return ok(await readStdinConfig());
+    } catch (e: any) {
+      return err(`Could not parse piped stdin as JSON: ${e.message}`);
+    }
   }
-}
 
-// ── Resolve config: CLI args > file config > prompt/default ──
+  try {
+    const config = readFileConfig(configFlag);
+    if (configFlag && Object.keys(config).length === 0) {
+      return err(`Config file not found: ${resolve(configFlag)}`);
+    }
+    return ok(config);
+  } catch (e: any) {
+    return err(`Failed to parse config file: ${e.message}`);
+  }
+};
 
-import { ok, err, type Result } from "neverthrow";
+// ── Config resolution ────────────────────────────────────────
 
 const resolveField = async <T>(
   label: string,
   cliVal: T | undefined,
   fileVal: T | undefined,
   defaultVal: T | undefined,
-  promptFn: (() => Promise<T>) | null
+  promptFn: (() => Promise<T>) | null,
+  isPiped: boolean,
 ): Promise<Result<T, string>> => {
   if (cliVal !== undefined) return ok(cliVal);
   if (fileVal !== undefined) return ok(fileVal);
@@ -235,87 +233,65 @@ const resolveField = async <T>(
   return err(`${label} is required (pass via config or --${label})`);
 };
 
-const provinceResult = await resolveField(
-  "province",
-  values.province,
-  fileConfig.province,
-  "Ontario",
-  () => promptChoice("Province of employment:", PROVINCES, "Ontario")
-);
-if (provinceResult.isErr()) { console.error(`❌ ${provinceResult.error}`); process.exit(1); }
-const province = provinceResult.value;
+const resolveConfig = async (
+  vals: typeof values,
+  fileConfig: Partial<PayrollConfig>,
+  isPiped: boolean,
+): Promise<Result<PayrollConfig, string>> => {
+  const province = await resolveField(
+    "province", vals.province, fileConfig.province, "Ontario",
+    () => promptChoice("Province of employment:", PROVINCES, "Ontario"), isPiped,
+  );
+  if (province.isErr()) return err(province.error);
 
-const salaryResult = await resolveField(
-  "salary",
-  values.salary !== undefined ? parseFloat(values.salary) : undefined,
-  fileConfig.annualSalary,
-  undefined,
-  () => promptNumber("Annual salary ($)")
-);
-if (salaryResult.isErr()) { console.error(`❌ ${salaryResult.error}`); process.exit(1); }
-const annualSalary = salaryResult.value;
+  const salary = await resolveField(
+    "salary",
+    vals.salary !== undefined ? parseFloat(vals.salary) : undefined,
+    fileConfig.annualSalary, undefined,
+    () => promptNumber("Annual salary ($)"), isPiped,
+  );
+  if (salary.isErr()) return err(salary.error);
 
-const payPeriodResult = await resolveField(
-  "pay-period",
-  values["pay-period"],
-  fileConfig.payPeriod,
-  "Semi-monthly (24 pay periods a year)",
-  () => promptChoice("Pay period:", PAY_PERIODS, "Semi-monthly (24 pay periods a year)")
-);
-if (payPeriodResult.isErr()) { console.error(`❌ ${payPeriodResult.error}`); process.exit(1); }
-const payPeriod = payPeriodResult.value;
+  const payPeriod = await resolveField(
+    "pay-period", vals["pay-period"], fileConfig.payPeriod,
+    "Semi-monthly (24 pay periods a year)",
+    () => promptChoice("Pay period:", PAY_PERIODS, "Semi-monthly (24 pay periods a year)"), isPiped,
+  );
+  if (payPeriod.isErr()) return err(payPeriod.error);
 
-const rrspEmployeeResult = await resolveField(
-  "rrsp-employee",
-  values["rrsp-employee"] !== undefined ? parseFloat(values["rrsp-employee"]) : undefined,
-  fileConfig.rrspEmployeePercent,
-  4,
-  () => promptNumber("Employee RRSP contribution (%)", 4)
-);
-if (rrspEmployeeResult.isErr()) { console.error(`❌ ${rrspEmployeeResult.error}`); process.exit(1); }
-const rrspEmployeePercent = rrspEmployeeResult.value;
+  const rrspEmployee = await resolveField(
+    "rrsp-employee",
+    vals["rrsp-employee"] !== undefined ? parseFloat(vals["rrsp-employee"]) : undefined,
+    fileConfig.rrspEmployeePercent, 4,
+    () => promptNumber("Employee RRSP contribution (%)", 4), isPiped,
+  );
+  if (rrspEmployee.isErr()) return err(rrspEmployee.error);
 
-const rrspEmployerResult = await resolveField(
-  "rrsp-employer",
-  values["rrsp-employer"] !== undefined ? parseFloat(values["rrsp-employer"]) : undefined,
-  fileConfig.rrspEmployerPercent,
-  4,
-  () => promptNumber("Employer RRSP match (%)", 4)
-);
-if (rrspEmployerResult.isErr()) { console.error(`❌ ${rrspEmployerResult.error}`); process.exit(1); }
-const rrspEmployerPercent = rrspEmployerResult.value;
+  const rrspEmployer = await resolveField(
+    "rrsp-employer",
+    vals["rrsp-employer"] !== undefined ? parseFloat(vals["rrsp-employer"]) : undefined,
+    fileConfig.rrspEmployerPercent, 4,
+    () => promptNumber("Employer RRSP match (%)", 4), isPiped,
+  );
+  if (rrspEmployer.isErr()) return err(rrspEmployer.error);
 
-// Boolean flags: CLI `false` (default) shouldn't override a config file `true`.
-// Only override config if the CLI flag was explicitly passed.
-const cppMaxedOut = values["cpp-maxed"] === true ? true : (fileConfig.cppMaxedOut ?? false);
-const eiMaxedOut = values["ei-maxed"] === true ? true : (fileConfig.eiMaxedOut ?? false);
+  const cppMaxedOut = vals["cpp-maxed"] === true ? true : (fileConfig.cppMaxedOut ?? false);
+  const eiMaxedOut = vals["ei-maxed"] === true ? true : (fileConfig.eiMaxedOut ?? false);
 
-closePrompt();
-
-const config: PayrollConfig = {
-  province,
-  annualSalary,
-  payPeriod,
-  rrspEmployeePercent,
-  rrspEmployerPercent,
-  cppMaxedOut,
-  eiMaxedOut,
+  return ok({
+    province: province.value,
+    annualSalary: salary.value,
+    payPeriod: payPeriod.value,
+    rrspEmployeePercent: rrspEmployee.value,
+    rrspEmployerPercent: rrspEmployer.value,
+    cppMaxedOut,
+    eiMaxedOut,
+  });
 };
-
-// CRA blocks headless browsers — default to headed
-const headless = values.headless ?? false;
-if (values.verbose) setVerbose(true);
 
 // ── Run ──────────────────────────────────────────────────────
 
-const wantTable = values.table ?? false;
-const wantAnnual = values.annual ?? false;
-const wantMonthly = values.monthly ?? false;
-const showCppEi = !wantTable && !wantAnnual && !wantMonthly;
-
-console.log(renderConfig(config, showCppEi));
-
-if (wantTable || wantAnnual || wantMonthly) {
+const runYearlyMode = async (config: PayrollConfig, headless: boolean, flags: { table: boolean; annual: boolean; monthly: boolean }) => {
   const yearlyResult = await calculateYearly(craService, config, headless);
   if (yearlyResult.isErr()) {
     console.error(`Error: ${yearlyResult.error}`);
@@ -325,10 +301,12 @@ if (wantTable || wantAnnual || wantMonthly) {
   const yearly = yearlyResult.value;
   const periodsPerYear = PAY_PERIOD_COUNTS[config.payPeriod];
 
-  if (wantTable) console.log(renderTable(yearly, periodsPerYear));
-  if (wantAnnual) console.log(renderAnnual(yearly.totals));
-  if (wantMonthly) console.log(renderMonthly(yearly.totals));
-} else {
+  if (flags.table) console.log(renderTable(yearly, periodsPerYear));
+  if (flags.annual) console.log(renderAnnual(yearly.totals));
+  if (flags.monthly) console.log(renderMonthly(yearly.totals));
+};
+
+const runSingleMode = async (config: PayrollConfig, headless: boolean) => {
   const calcResult = await calculatePayroll(config, headless);
   if (calcResult.isErr()) {
     console.error(`Error: ${calcResult.error}`);
@@ -336,11 +314,48 @@ if (wantTable || wantAnnual || wantMonthly) {
   }
 
   console.log(renderSingleResult(calcResult.value));
+};
+
+const showUpdateNag = async () => {
+  const updateInfo = await checkForUpdate();
+  if (updateInfo.isOk() && updateInfo.value) {
+    console.log(`\nUpdate available: ${updateInfo.value.tag} (current: v${currentVersion()})`);
+    console.log(`Run 'cra-payroll --update' to install it.`);
+  }
+};
+
+// ── Main ─────────────────────────────────────────────────────
+
+const isPiped = detectPipedStdin();
+
+const fileConfigResult = await loadFileConfig(values.config ?? "", isPiped);
+if (fileConfigResult.isErr()) {
+  console.error(`❌ ${fileConfigResult.error}`);
+  process.exit(1);
 }
 
-// ── Background update check ─────────────────────────────────
-const updateInfo = await checkForUpdate();
-if (updateInfo.isOk() && updateInfo.value) {
-  console.log(`\nUpdate available: ${updateInfo.value.tag} (current: v${currentVersion()})`);
-  console.log(`Run 'cra-payroll --update' to install it.`);
+const configResult = await resolveConfig(values, fileConfigResult.value, isPiped);
+rl.close();
+
+if (configResult.isErr()) {
+  console.error(`❌ ${configResult.error}`);
+  process.exit(1);
 }
+
+const config = configResult.value;
+const headless = values.headless ?? false;
+if (values.verbose) setVerbose(true);
+
+const wantTable = values.table ?? false;
+const wantAnnual = values.annual ?? false;
+const wantMonthly = values.monthly ?? false;
+
+console.log(renderConfig(config, !wantTable && !wantAnnual && !wantMonthly));
+
+if (wantTable || wantAnnual || wantMonthly) {
+  await runYearlyMode(config, headless, { table: wantTable, annual: wantAnnual, monthly: wantMonthly });
+} else {
+  await runSingleMode(config, headless);
+}
+
+await showUpdateNag();

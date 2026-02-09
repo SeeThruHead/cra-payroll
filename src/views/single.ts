@@ -16,15 +16,15 @@ export const renderSingleResult = (r: PayrollResult): string => {
   lines.push(line("─", W));
   lines.push(`  Federal Tax:       -$${f(r.federalTax)}`);
   lines.push(`  Provincial Tax:    -$${f(r.provincialTax)}`);
-  lines.push(`  CPP:               -$${f(r.cppDeductions)}`);
-  if (r.cpp2Deductions > 0) lines.push(`  CPP2:              -$${f(r.cpp2Deductions)}`);
-  lines.push(`  EI:                -$${f(r.eiDeductions)}`);
+  lines.push(`  CPP:               -$${f(r.cpp)}`);
+  if (r.cpp2 > 0) lines.push(`  CPP2:              -$${f(r.cpp2)}`);
+  lines.push(`  EI:                -$${f(r.ei)}`);
   lines.push(line("─", W));
   lines.push(`  Total Deductions:  -$${f(r.totalDeductions)}`);
   lines.push(line("═", W));
-  lines.push(`  Net Pay:             $${f(r.netAmount)}`);
+  lines.push(`  Net Pay:             $${f(r.net)}`);
   if (r.rrspEmployee > 0) {
-    lines.push(`     (after RRSP):     $${f(r.netAmount - r.rrspEmployee)}`);
+    lines.push(`     (after RRSP):     $${f(r.net - r.rrspEmployee)}`);
   }
 
   return lines.join("\n");

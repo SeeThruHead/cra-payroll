@@ -17,16 +17,14 @@ const BASE: PayrollConfig = {
   eiMaxedOut: false,
 };
 
-function cfg(o: Partial<PayrollConfig> = {}): PayrollConfig {
-  return { ...BASE, ...o };
-}
+const cfg = (o: Partial<PayrollConfig> = {}): PayrollConfig => ({ ...BASE, ...o });
 
-function unwrap(result: Awaited<ReturnType<typeof calculatePayroll>>) {
+const unwrap = (result: Awaited<ReturnType<typeof calculatePayroll>>) => {
   if (result.isErr()) {
     expect.unreachable(`Expected Ok but got Err: ${result.error}`);
   }
   return result.value;
-}
+};
 
 afterEach(async () => {
   await new Promise((r) => setTimeout(r, 1000));
@@ -49,28 +47,28 @@ describe("CRA integration", () => {
     const r = unwrap(await calculatePayroll(cfg(), HEADLESS));
 
     expect(r.grossIncome).toBe(4166.67);
-    expect(r.netAmount).toBeGreaterThan(0);
-    expect(r.netAmount).toBeLessThan(r.grossIncome);
+    expect(r.net).toBeGreaterThan(0);
+    expect(r.net).toBeLessThan(r.grossIncome);
     expect(r.federalTax).toBeGreaterThan(0);
     expect(r.provincialTax).toBeGreaterThan(0);
-    expect(r.cppDeductions).toBeGreaterThan(0);
-    expect(r.eiDeductions).toBeGreaterThan(0);
+    expect(r.cpp).toBeGreaterThan(0);
+    expect(r.ei).toBeGreaterThan(0);
     // Total deductions = sum of individual deductions
     expect(r.totalDeductions).toBeCloseTo(
-      r.federalTax + r.provincialTax + r.cppDeductions + r.cpp2Deductions + r.eiDeductions, 2
+      r.federalTax + r.provincialTax + r.cpp + r.cpp2 + r.ei, 2
     );
     // Net = gross - deductions
-    expect(r.grossIncome - r.totalDeductions).toBeCloseTo(r.netAmount, 2);
+    expect(r.grossIncome - r.totalDeductions).toBeCloseTo(r.net, 2);
   }, 10_000);
 
   test("CPP/EI maxed — zero CPP/EI deductions, only taxes remain", async () => {
     const r = unwrap(await calculatePayroll(cfg({ cppMaxedOut: true, eiMaxedOut: true }), HEADLESS));
 
-    expect(r.cppDeductions).toBe(0);
-    expect(r.cpp2Deductions).toBe(0);
-    expect(r.eiDeductions).toBe(0);
+    expect(r.cpp).toBe(0);
+    expect(r.cpp2).toBe(0);
+    expect(r.ei).toBe(0);
     expect(r.totalDeductions).toBe(r.federalTax + r.provincialTax);
-    expect(r.netAmount).toBeGreaterThan(3000);
+    expect(r.net).toBeGreaterThan(3000);
   }, 10_000);
 
   test("RRSP contributions reduce taxes vs base case", async () => {
@@ -88,7 +86,7 @@ describe("CRA integration", () => {
     const r = unwrap(await calculatePayroll(cfg({ province: "Alberta" }), HEADLESS));
 
     expect(r.grossIncome).toBe(4166.67);
-    expect(r.netAmount).toBeGreaterThan(0);
+    expect(r.net).toBeGreaterThan(0);
     // Ontario provincial ~289 for this salary; Alberta should differ meaningfully
     expect(r.provincialTax).not.toBeCloseTo(289, 0);
   }, 10_000);
@@ -97,7 +95,7 @@ describe("CRA integration", () => {
     const r = unwrap(await calculatePayroll(cfg({ annualSalary: 60_000 }), HEADLESS));
 
     expect(r.grossIncome).toBe(2500);
-    expect(r.netAmount).toBeGreaterThan(0);
+    expect(r.net).toBeGreaterThan(0);
     expect(r.totalDeductions / r.grossIncome).toBeLessThan(0.30);
   }, 10_000);
 
@@ -106,7 +104,7 @@ describe("CRA integration", () => {
 
     // 100000 / 26 = 3846.15
     expect(r.grossIncome).toBeCloseTo(3846.15, 2);
-    expect(r.netAmount).toBeGreaterThan(0);
+    expect(r.net).toBeGreaterThan(0);
     expect(r.totalDeductions).toBeGreaterThan(0);
   }, 10_000);
 });

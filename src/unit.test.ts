@@ -6,16 +6,14 @@ import { PAY_PERIODS, type PayrollConfig, type PayrollResult, type PayrollServic
 
 // ── Mock service ────────────────────────────────────────────
 
-function mockService(responses: Record<string, PayrollResult>): PayrollService {
-  return {
-    async calculate(config, _headless) {
-      const key = `${config.cppMaxedOut ? "maxed" : "active"}`;
-      const result = responses[key];
-      if (!result) return err(`mock: no response for key "${key}"`);
-      return ok(result);
-    },
-  };
-}
+const mockService = (responses: Record<string, PayrollResult>): PayrollService => ({
+  calculate: async (config, _headless) => {
+    const key = config.cppMaxedOut ? "maxed" : "active";
+    const result = responses[key];
+    if (!result) return err(`mock: no response for key "${key}"`);
+    return ok(result);
+  },
+});
 
 const BASE_CONFIG: PayrollConfig = {
   province: "Ontario",
@@ -34,22 +32,22 @@ const ACTIVE_RESULT: PayrollResult = {
   rrspEmployer: 166.67,
   federalTax: 521.11,
   provincialTax: 264.24,
-  cppDeductions: 249.16,
-  cpp2Deductions: 0,
-  eiDeductions: 67.92,
+  cpp: 249.16,
+  cpp2: 0,
+  ei: 67.92,
   totalDeductions: 1269.10,
-  netAmount: 2897.57,
+  net: 2897.57,
 };
 
 const MAXED_RESULT: PayrollResult = {
   ...ACTIVE_RESULT,
-  cppDeductions: 0,
-  cpp2Deductions: 0,
-  eiDeductions: 0,
+  cpp: 0,
+  cpp2: 0,
+  ei: 0,
   federalTax: 540.00,
   provincialTax: 275.00,
   totalDeductions: 815.00,
-  netAmount: 3351.67,
+  net: 3351.67,
 };
 
 // ── parseResults tests ──────────────────────────────────────
@@ -73,11 +71,11 @@ Net amount 3,064.24
     expect(r.grossIncome).toBe(4166.67);
     expect(r.federalTax).toBe(521.11);
     expect(r.provincialTax).toBe(264.24);
-    expect(r.cppDeductions).toBe(249.16);
-    expect(r.cpp2Deductions).toBe(0);
-    expect(r.eiDeductions).toBe(67.92);
+    expect(r.cpp).toBe(249.16);
+    expect(r.cpp2).toBe(0);
+    expect(r.ei).toBe(67.92);
     expect(r.totalDeductions).toBe(1102.43);
-    expect(r.netAmount).toBe(3064.24);
+    expect(r.net).toBe(3064.24);
   });
 
   test("calculates RRSP amounts from config", () => {
@@ -239,8 +237,8 @@ describe("buildYearlyTable", () => {
     const highActive: PayrollResult = {
       ...ACTIVE_RESULT,
       grossIncome: 10958.33,
-      cppDeductions: 669.42,
-      eiDeductions: 178.62,
+      cpp: 669.42,
+      ei: 178.62,
     };
     const highMaxed: PayrollResult = { ...MAXED_RESULT, grossIncome: 10958.33 };
     const highConfig = { ...BASE_CONFIG, annualSalary: 263000 };
@@ -259,7 +257,7 @@ describe("calculateYearly", () => {
   test("calls service twice (active + maxed)", async () => {
     let calls: string[] = [];
     const service: PayrollService = {
-      async calculate(config, _headless) {
+      calculate: async (config, _headless) => {
         const key = config.cppMaxedOut ? "maxed" : "active";
         calls.push(key);
         return ok(key === "maxed" ? MAXED_RESULT : ACTIVE_RESULT);
@@ -283,7 +281,7 @@ describe("calculateYearly", () => {
 
   test("propagates service errors", async () => {
     const failService: PayrollService = {
-      async calculate() { return err("CRA is down"); },
+      calculate: async () => err("CRA is down"),
     };
     const result = await calculateYearly(failService, BASE_CONFIG, false);
     expect(result.isErr()).toBe(true);

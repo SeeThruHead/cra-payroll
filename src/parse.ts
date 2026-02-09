@@ -10,11 +10,11 @@ const PATTERNS: Record<string, RegExp> = {
   grossIncome:     /Salary or wages income\s+([\d,]+\.\d{2})/,
   federalTax:      /Federal tax deduction\s+([\d,]+\.\d{2})/,
   provincialTax:   /Provincial tax deduction\s+([\d,]+\.\d{2})/,
-  cppDeductions:   /CPP deductions\s+([\d,]+\.\d{2})/,
-  cpp2Deductions:  /CPP2 deductions\s+([\d,]+\.\d{2})/,
-  eiDeductions:    /EI deductions\s+([\d,]+\.\d{2})/,
+  cpp:             /CPP deductions\s+([\d,]+\.\d{2})/,
+  cpp2:            /CPP2 deductions\s+([\d,]+\.\d{2})/,
+  ei:              /EI deductions\s+([\d,]+\.\d{2})/,
   totalDeductions: /Total deductions\s+([\d,]+\.\d{2})/,
-  netAmount:       /Net amount\s+([\d,]+\.\d{2})/,
+  net:             /Net amount\s+([\d,]+\.\d{2})/,
 };
 
 const extractField = (text: string, pattern: RegExp): number | null => {
@@ -67,11 +67,11 @@ export const parseResults = (
     grossIncome:     values.grossIncome ?? 0,
     federalTax:      values.federalTax ?? 0,
     provincialTax:   values.provincialTax ?? 0,
-    cppDeductions:   values.cppDeductions ?? 0,
-    cpp2Deductions:  values.cpp2Deductions ?? 0,
-    eiDeductions:    values.eiDeductions ?? 0,
+    cpp:             values.cpp ?? 0,
+    cpp2:            values.cpp2 ?? 0,
+    ei:              values.ei ?? 0,
     totalDeductions: values.totalDeductions ?? 0,
-    netAmount:       values.netAmount ?? 0,
+    net:             values.net ?? 0,
     rrspEmployee:    rrsp.employee,
     rrspEmployer:    rrsp.employer,
   });

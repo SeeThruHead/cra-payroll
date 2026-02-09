@@ -65,13 +65,15 @@ export const findChrome = (): Result<string, string> => {
 };
 
 // ── BrowserSession ──────────────────────────────────────────
-// Wraps a Puppeteer Page with high-level, Result-returning methods.
 
 export interface BrowserSession {
+  // Navigation
   goto(url: string): Promise<Result<void, string>>;
-  waitForUrl(urlPart: string): Promise<Result<void, string>>;
+  waitForPageReady(urlPart: string): Promise<Result<void, string>>;
   waitForText(text: string): Promise<Result<void, string>>;
   waitForButton(): Promise<Result<void, string>>;
+
+  // Form interaction
   clickButton(textMatch: string): Promise<Result<void, string>>;
   selectByLabel(labelMatch: string, optionText: string): Promise<Result<void, string>>;
   selectLatestYear(): Promise<Result<string, string>>;
@@ -80,11 +82,17 @@ export interface BrowserSession {
   fillInputByLabel(labelMatch: string, value: string): Promise<Result<void, string>>;
   checkCheckboxByLabel(labelMatch: string): Promise<Result<void, string>>;
   clickRadioByLabel(labelMatch: string): Promise<Result<void, string>>;
+
+  // Reading
   readMainText(): Promise<Result<string, string>>;
   readErrors(): Promise<Result<string | null, string>>;
+
+  // Lifecycle
   close(): Promise<void>;
   settle(): Promise<void>;
 }
+
+// ── Launch ──────────────────────────────────────────────────
 
 export const launchSession = async (headless: boolean): Promise<Result<BrowserSession, string>> => {
   const chromePath = findChrome();
@@ -127,22 +135,25 @@ export const launchSession = async (headless: boolean): Promise<Result<BrowserSe
   return ok(createSession(page, browser));
 };
 
-const createSession = (page: Page, browser: Browser): BrowserSession => ({
-  goto: async (url) =>
+// ── Session factory ─────────────────────────────────────────
+
+const navigationMethods = (page: Page) => ({
+  goto: async (url: string) =>
     safe(
       page.goto(url, { timeout: PAGE_TIMEOUT, waitUntil: "domcontentloaded" }).then(() => {}),
       "goto"
     ),
 
-  waitForUrl: async (urlPart) => {
+  waitForPageReady: async (urlPart: string): Promise<Result<void, string>> => {
     log(`waiting for /${urlPart}...`);
-    const nav = await safe(
+
+    const navigated = await safe(
       page.waitForFunction((p: string) => window.location.href.includes(p), { timeout: PAGE_TIMEOUT }, urlPart),
       `navigate to ${urlPart}`
     );
-    if (nav.isErr()) return err(nav.error);
+    if (navigated.isErr()) return err(navigated.error);
 
-    // Wait for loading splash
+    // Best-effort: let Angular's loading splash clear before interacting
     await safe(
       page.waitForFunction(() => {
         const body = document.body?.innerText ?? "";
@@ -151,7 +162,7 @@ const createSession = (page: Page, browser: Browser): BrowserSession => ({
       "loading splash"
     ).unwrapOr(undefined);
 
-    // Wait for heading
+    // Best-effort: wait for main heading to render
     await safe(
       page.waitForSelector("main h1", { visible: true, timeout: ACTION_TIMEOUT }),
       "heading"
@@ -161,7 +172,7 @@ const createSession = (page: Page, browser: Browser): BrowserSession => ({
     return ok(undefined);
   },
 
-  waitForText: async (text) =>
+  waitForText: async (text: string) =>
     safe(
       page.waitForFunction((t: string) => (document.querySelector("main")?.innerText ?? "").includes(t), { timeout: PAGE_TIMEOUT }, text),
       `wait for "${text}"`
@@ -172,8 +183,10 @@ const createSession = (page: Page, browser: Browser): BrowserSession => ({
       page.waitForSelector("button", { visible: true, timeout: PAGE_TIMEOUT }),
       "wait for button"
     ).map(() => undefined),
+});
 
-  clickButton: async (textMatch) =>
+const formMethods = (page: Page) => ({
+  clickButton: async (textMatch: string) =>
     safe(
       page.evaluate((text: string) => {
         const btn = Array.from(document.querySelectorAll("button"))
@@ -184,9 +197,14 @@ const createSession = (page: Page, browser: Browser): BrowserSession => ({
       `click "${textMatch}"`
     ),
 
-  selectByLabel: async (labelMatch, optionText) =>
+  selectByLabel: async (labelMatch: string, optionText: string) =>
     safe(
       page.evaluate((match: string, text: string) => {
+        const fireChangeEvents = (el: HTMLElement) => {
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+        };
+
         for (const s of document.querySelectorAll("select")) {
           const label = (s as any).labels?.[0]?.textContent ?? "";
           const title = s.title ?? "";
@@ -194,8 +212,7 @@ const createSession = (page: Page, browser: Browser): BrowserSession => ({
             const opt = Array.from(s.options).find(o => o.text.includes(text));
             if (!opt) throw new Error(`Option "${text}" not found in "${match}"`);
             s.value = opt.value;
-            s.dispatchEvent(new Event("change", { bubbles: true }));
-            s.dispatchEvent(new Event("input", { bubbles: true }));
+            fireChangeEvents(s);
             return;
           }
         }
@@ -207,59 +224,73 @@ const createSession = (page: Page, browser: Browser): BrowserSession => ({
   selectLatestYear: async () =>
     safe(
       page.evaluate(() => {
+        const fireChangeEvents = (el: HTMLElement) => {
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+        };
+
         const s = Array.from(document.querySelectorAll("select"))
           .find(el => el.id === "datePaidYear" || el.title?.toLowerCase().includes("year"));
         if (!s) throw new Error("Year select not found");
         const years = Array.from(s.options).map(o => parseInt(o.value)).filter(n => !isNaN(n)).sort((a, b) => b - a);
         if (!years.length) throw new Error("No valid years");
         s.value = years[0].toString();
-        s.dispatchEvent(new Event("change", { bubbles: true }));
-        s.dispatchEvent(new Event("input", { bubbles: true }));
+        fireChangeEvents(s);
         return years[0].toString();
       }),
       "select year"
     ),
 
-  selectDateMonth: async (month) =>
+  selectDateMonth: async (month: string) =>
     safe(
       page.evaluate((m: string) => {
+        const fireChangeEvents = (el: HTMLElement) => {
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+        };
+
         const s = Array.from(document.querySelectorAll("select"))
           .find(el => el.id === "datePaidMonth" || el.title?.toLowerCase().includes("month"));
         if (!s) return;
         const opt = Array.from(s.options).find(o => o.text.includes(m));
         if (opt) {
           s.value = opt.value;
-          s.dispatchEvent(new Event("change", { bubbles: true }));
-          s.dispatchEvent(new Event("input", { bubbles: true }));
+          fireChangeEvents(s);
         }
       }, month),
       "select month"
     ),
 
-  selectDateDay: async (day) =>
+  selectDateDay: async (day: string) =>
     safe(
       page.evaluate((d: string) => {
+        const fireChangeEvents = (el: HTMLElement) => {
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+        };
+
         const s = Array.from(document.querySelectorAll("select"))
           .find(el => el.id === "datePaidDay" || el.title?.toLowerCase().includes("day"));
         if (!s) return;
         const opt = Array.from(s.options).find(o => o.value === d);
         if (opt) {
           s.value = opt.value;
-          s.dispatchEvent(new Event("change", { bubbles: true }));
-          s.dispatchEvent(new Event("input", { bubbles: true }));
+          fireChangeEvents(s);
         }
       }, day),
       "select day"
     ),
 
-  fillInputByLabel: async (labelMatch, value) =>
+  fillInputByLabel: async (labelMatch: string, value: string) =>
     safe(
       page.evaluate((match: string, val: string) => {
+        const isVisible = (el: HTMLElement) => el.offsetParent !== null;
+
         for (const inp of document.querySelectorAll("input")) {
           const label = (inp as any).labels?.[0]?.textContent ?? "";
           const name = inp.name ?? "";
           if (label.includes(match) || name.includes(match)) {
-            if (inp.type !== "checkbox" && inp.type !== "radio" && inp.offsetParent !== null) {
+            if (inp.type !== "checkbox" && inp.type !== "radio" && isVisible(inp)) {
               inp.focus();
               inp.value = val;
               inp.dispatchEvent(new Event("input", { bubbles: true }));
@@ -273,7 +304,7 @@ const createSession = (page: Page, browser: Browser): BrowserSession => ({
       `fill "${labelMatch}"`
     ),
 
-  checkCheckboxByLabel: async (labelMatch) =>
+  checkCheckboxByLabel: async (labelMatch: string) =>
     safe(
       page.evaluate((match: string) => {
         const cb = Array.from(document.querySelectorAll("input[type='checkbox']"))
@@ -286,7 +317,7 @@ const createSession = (page: Page, browser: Browser): BrowserSession => ({
       `check "${labelMatch}"`
     ),
 
-  clickRadioByLabel: async (labelMatch) =>
+  clickRadioByLabel: async (labelMatch: string) =>
     safe(
       page.evaluate((match: string) => {
         const radio = Array.from(document.querySelectorAll("input[type='radio']"))
@@ -295,14 +326,16 @@ const createSession = (page: Page, browser: Browser): BrowserSession => ({
       }, labelMatch),
       `radio "${labelMatch}"`
     ),
+});
 
+const readMethods = (page: Page) => ({
   readMainText: async () =>
     safe(
       page.evaluate(() => document.querySelector("main")?.innerText ?? ""),
       "read main"
     ),
 
-  readErrors: async () => {
+  readErrors: async (): Promise<Result<string | null, string>> => {
     const text = await page.evaluate(() => {
       const els = document.querySelectorAll('.error, .alert-danger, [role="alert"], .text-danger');
       const texts: string[] = [];
@@ -314,7 +347,12 @@ const createSession = (page: Page, browser: Browser): BrowserSession => ({
     }).catch(() => null);
     return ok(text);
   },
+});
 
+const createSession = (page: Page, browser: Browser): BrowserSession => ({
+  ...navigationMethods(page),
+  ...formMethods(page),
+  ...readMethods(page),
   close: async () => { await browser.close().catch(() => {}); },
   settle: async () => { await sleep(300); },
 });

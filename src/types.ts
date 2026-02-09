@@ -16,11 +16,11 @@ export interface PayrollResult {
   rrspEmployer: number;
   federalTax: number;
   provincialTax: number;
-  cppDeductions: number;
-  cpp2Deductions: number;
-  eiDeductions: number;
+  cpp: number;
+  cpp2: number;
+  ei: number;
   totalDeductions: number;
-  netAmount: number;
+  net: number;
 }
 
 export const PAY_PERIODS: Record<string, number> = {

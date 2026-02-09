@@ -25,7 +25,7 @@ const loadEntryPage = async (session: BrowserSession): Promise<Result<void, stri
 const advancePastEntry = async (session: BrowserSession): Promise<Result<void, string>> => {
   const click = await session.clickButton("Next");
   if (click.isErr()) return click;
-  return session.waitForUrl("step1");
+  return session.waitForPageReady("step1");
 };
 
 const fillEmployeeInfo = async (
@@ -56,7 +56,7 @@ const fillEmployeeInfo = async (
 
   const next = await session.clickButton("Next");
   if (next.isErr()) return next;
-  return session.waitForUrl("step2");
+  return session.waitForPageReady("step2");
 };
 
 const fillSalaryInfo = async (
@@ -94,7 +94,7 @@ const fillSalaryInfo = async (
 
   const next = await session.clickButton("Next");
   if (next.isErr()) return next;
-  return session.waitForUrl("step3");
+  return session.waitForPageReady("step3");
 };
 
 const fillCppEi = async (
@@ -117,7 +117,7 @@ const fillCppEi = async (
 
   const calc = await session.clickButton("Calculate");
   if (calc.isErr()) return calc;
-  return session.waitForUrl("results");
+  return session.waitForPageReady("results");
 };
 
 const readResults = async (session: BrowserSession): Promise<Result<string, string>> => {
@@ -137,6 +137,21 @@ const readResults = async (session: BrowserSession): Promise<Result<string, stri
   return session.readMainText();
 };
 
+// ── Error recovery ──────────────────────────────────────────
+// Wraps a step so that on failure, form errors are captured and the browser is closed.
+
+const withErrorRecovery = (session: BrowserSession) =>
+  async <T>(step: Promise<Result<T, string>>): Promise<Result<T, string>> => {
+    const result = await step;
+    if (result.isErr()) {
+      const errors = await session.readErrors();
+      const extra = errors.isOk() && errors.value ? ` (form error: ${errors.value})` : "";
+      await session.close();
+      return err(result.error + extra);
+    }
+    return result;
+  };
+
 // ── Orchestrator ────────────────────────────────────────────
 
 export const calculatePayroll = async (
@@ -153,36 +168,25 @@ export const calculatePayroll = async (
   const sessionResult = await launchSession(headless);
   if (sessionResult.isErr()) return err(sessionResult.error);
   const session = sessionResult.value;
+  const guard = withErrorRecovery(session);
 
-  // Run each step, cleaning up on failure
-  const run = async <T>(step: Promise<Result<T, string>>): Promise<Result<T, string>> => {
-    const result = await step;
-    if (result.isErr()) {
-      const errors = await session.readErrors();
-      const extra = errors.isOk() && errors.value ? ` (form error: ${errors.value})` : "";
-      await session.close();
-      return err(result.error + extra);
-    }
-    return result;
-  };
-
-  const entry = await run(loadEntryPage(session));
+  const entry = await guard(loadEntryPage(session));
   if (entry.isErr()) return entry;
   log("entry page loaded");
 
-  const advance = await run(advancePastEntry(session));
+  const advance = await guard(advancePastEntry(session));
   if (advance.isErr()) return advance;
 
-  const step1 = await run(fillEmployeeInfo(session, config));
+  const step1 = await guard(fillEmployeeInfo(session, config));
   if (step1.isErr()) return step1;
 
-  const step2 = await run(fillSalaryInfo(session, config, salaryPerPeriod, rrspEmployerPerPeriod, rrspEmployeePerPeriod));
+  const step2 = await guard(fillSalaryInfo(session, config, salaryPerPeriod, rrspEmployerPerPeriod, rrspEmployeePerPeriod));
   if (step2.isErr()) return step2;
 
-  const step3 = await run(fillCppEi(session, config));
+  const step3 = await guard(fillCppEi(session, config));
   if (step3.isErr()) return step3;
 
-  const text = await run(readResults(session));
+  const text = await guard(readResults(session));
   if (text.isErr()) return text;
 
   log("got results, parsing...");
