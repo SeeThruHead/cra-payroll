@@ -17,63 +17,67 @@ interface Row {
   suffix?: string;
 }
 
-const renderRow = (r: Row): string => {
-  const c = (v: number | string, w: number) =>
-    typeof v === "number" ? money(v).padStart(w) : v.padStart(w);
+const col = (v: number | string, w: number) =>
+  typeof v === "number" ? money(v).padStart(w) : v.padStart(w);
 
-  return `${r.label} │ ${c(r.gross, 10)} │ ${c(r.fedTax, 10)} │ ${c(r.provTax, 10)} │ ${c(r.cpp, 10)} │ ${c(r.cpp2, 6)} │ ${c(r.ei, 10)} │ ${c(r.netPay, 10)}${r.rrspEmp !== undefined ? ` │ ${c(r.rrspEmp, 10)} │ ${c(r.takeHome!, 10)}` : ""} │ ${c(r.cumCppEi, 10)}${r.suffix ?? ""}`;
-};
+const renderRow = (r: Row): string =>
+  `${r.label} │ ${col(r.gross, 10)} │ ${col(r.fedTax, 10)} │ ${col(r.provTax, 10)} │ ${col(r.cpp, 10)} │ ${col(r.cpp2, 6)} │ ${col(r.ei, 10)} │ ${col(r.netPay, 10)}${r.rrspEmp !== undefined ? ` │ ${col(r.rrspEmp, 10)} │ ${col(r.takeHome!, 10)}` : ""} │ ${col(r.cumCppEi, 10)}${r.suffix ?? ""}`;
+
+const hasRrsp = (totals: YearlyResult["totals"]) =>
+  totals.rrspEmployee > 0 || totals.rrspEmployer > 0;
+
+const rrspFields = (show: boolean, fields: Record<string, number | string>) =>
+  show ? fields : {};
+
+const annotate = (r: PayPeriodRow, first: PayPeriodRow): string =>
+  r.cpp === 0 && r.cpp2 === 0 && r.ei === 0 ? " ✓ maxed"
+    : r.cpp < first.cpp || r.ei < first.ei ? " ← partial"
+    : "";
+
+const toRow = (r: PayPeriodRow, first: PayPeriodRow, showRrsp: boolean): Row => ({
+  label: ` ${String(r.period).padStart(3)} `,
+  gross: r.grossIncome, fedTax: r.federalTax, provTax: r.provincialTax,
+  cpp: r.cpp, cpp2: r.cpp2, ei: r.ei, netPay: r.netPay,
+  ...rrspFields(showRrsp, { rrspEmp: r.rrspEmployee, takeHome: r.netPay - r.rrspEmployee }),
+  cumCppEi: r.cumulativeCpp + r.cumulativeCpp2 + r.cumulativeEi,
+  suffix: annotate(r, first),
+});
+
+const headerRow = (showRrsp: boolean): Row => ({
+  label: "  #  ",
+  gross: "Gross", fedTax: "Fed Tax", provTax: "Prov Tax",
+  cpp: "CPP", cpp2: "CPP2", ei: "EI", netPay: "Net Pay",
+  ...rrspFields(showRrsp, { rrspEmp: "RRSP Emp", takeHome: "Take Home" }),
+  cumCppEi: "Cum CPP/EI",
+});
+
+const totalsRow = (totals: YearlyResult["totals"], showRrsp: boolean): Row => ({
+  label: " TOT ",
+  gross: totals.grossIncome, fedTax: totals.federalTax, provTax: totals.provincialTax,
+  cpp: totals.cpp, cpp2: totals.cpp2, ei: totals.ei, netPay: totals.netPay,
+  ...rrspFields(showRrsp, { rrspEmp: totals.rrspEmployee, takeHome: totals.netPay - totals.rrspEmployee }),
+  cumCppEi: "",
+});
 
 export const renderTable = (yearly: YearlyResult, periodsPerYear: number): string =>
   R.pipe(
     yearly,
-
-    ({ rows, totals }) => {
-      const hasRrsp = totals.rrspEmployee > 0 || totals.rrspEmployer > 0;
-      const takeHome = totals.netPay - totals.rrspEmployee;
-      const rrsp = (fields: Record<string, number | string>) =>
-        hasRrsp ? fields : {};
-
-      const toRow = (r: PayPeriodRow): Row => ({
-        label: ` ${String(r.period).padStart(3)} `,
-        gross: r.grossIncome, fedTax: r.federalTax, provTax: r.provincialTax,
-        cpp: r.cpp, cpp2: r.cpp2, ei: r.ei, netPay: r.netPay,
-        ...rrsp({ rrspEmp: r.rrspEmployee, takeHome: r.netPay - r.rrspEmployee }),
-        cumCppEi: r.cumulativeCpp + r.cumulativeCpp2 + r.cumulativeEi,
-        suffix: r.cpp === 0 && r.cpp2 === 0 && r.ei === 0 ? " ✓ maxed"
-          : r.cpp < rows[0].cpp || r.ei < rows[0].ei ? " ← partial"
-          : "",
-      });
-
-      const header = renderRow({
-        label: "  #  ",
-        gross: "Gross", fedTax: "Fed Tax", provTax: "Prov Tax",
-        cpp: "CPP", cpp2: "CPP2", ei: "EI", netPay: "Net Pay",
-        ...rrsp({ rrspEmp: "RRSP Emp", takeHome: "Take Home" }),
-        cumCppEi: "Cum CPP/EI",
-      });
-
-      const totalsStr = renderRow({
-        label: " TOT ",
-        gross: totals.grossIncome, fedTax: totals.federalTax, provTax: totals.provincialTax,
-        cpp: totals.cpp, cpp2: totals.cpp2, ei: totals.ei, netPay: totals.netPay,
-        ...rrsp({ rrspEmp: totals.rrspEmployee, takeHome }),
-        cumCppEi: "",
-      });
-
-      return { rows, totals, hasRrsp, header, totalsStr, toRow };
-    },
-
-    ({ rows, totals, hasRrsp, header, totalsStr, toRow }) => {
+    ({ rows, totals }) => ({
+      rows,
+      totals,
+      showRrsp: hasRrsp(totals),
+      header: renderRow(headerRow(hasRrsp(totals))),
+    }),
+    ({ rows, totals, showRrsp, header }) => {
       const W = header.length;
       return `Per-Paycheck Table (2026)
 ${line("═", W)}
 ${header}
 ${line("─", W)}
-${rows.map(r => renderRow(toRow(r))).join("\n")}
+${rows.map(r => renderRow(toRow(r, rows[0], showRrsp))).join("\n")}
 ${line("─", W)}
-${totalsStr}
+${renderRow(totalsRow(totals, showRrsp))}
 ${line("═", W)}${
-when(hasRrsp, `\n  RRSP (Employer match): $${money(totals.rrspEmployer)}/yr ($${money(totals.rrspEmployer / periodsPerYear)}/period)`)}`;
+when(showRrsp, `\n  RRSP (Employer match): $${money(totals.rrspEmployer)}/yr ($${money(totals.rrspEmployer / periodsPerYear)}/period)`)}`;
     },
   );
