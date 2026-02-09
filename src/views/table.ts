@@ -1,11 +1,6 @@
+import * as R from "remeda";
 import { money, line, when } from "./format";
 import type { YearlyResult, PayPeriodRow } from "../yearly";
-
-const annotate = (r: PayPeriodRow, first: PayPeriodRow): string => {
-  if (r.cpp === 0 && r.cpp2 === 0 && r.ei === 0) return " ✓ maxed";
-  if (r.cpp < first.cpp || r.ei < first.ei) return " ← partial";
-  return "";
-};
 
 interface Row {
   label: string;
@@ -29,7 +24,7 @@ const renderRow = (r: Row): string => {
   return `${r.label} │ ${c(r.gross, 10)} │ ${c(r.fedTax, 10)} │ ${c(r.provTax, 10)} │ ${c(r.cpp, 10)} │ ${c(r.cpp2, 6)} │ ${c(r.ei, 10)} │ ${c(r.netPay, 10)}${r.rrspEmp !== undefined ? ` │ ${c(r.rrspEmp, 10)} │ ${c(r.takeHome!, 10)}` : ""} │ ${c(r.cumCppEi, 10)}${r.suffix ?? ""}`;
 };
 
-const toRow = (r: PayPeriodRow, firstRow: PayPeriodRow, hasRrsp: boolean): Row => ({
+const baseFields = (r: PayPeriodRow): Row => ({
   label: ` ${String(r.period).padStart(3)} `,
   gross: r.grossIncome,
   fedTax: r.federalTax,
@@ -38,10 +33,24 @@ const toRow = (r: PayPeriodRow, firstRow: PayPeriodRow, hasRrsp: boolean): Row =
   cpp2: r.cpp2,
   ei: r.ei,
   netPay: r.netPay,
-  ...(hasRrsp ? { rrspEmp: r.rrspEmployee, takeHome: r.netPay - r.rrspEmployee } : {}),
   cumCppEi: r.cumulativeCpp + r.cumulativeCpp2 + r.cumulativeEi,
-  suffix: annotate(r, firstRow),
 });
+
+const withRrsp = (hasRrsp: boolean) => (row: Row, r: PayPeriodRow): Row =>
+  hasRrsp ? { ...row, rrspEmp: r.rrspEmployee, takeHome: r.netPay - r.rrspEmployee } : row;
+
+const withAnnotation = (firstRow: PayPeriodRow) => (row: Row, r: PayPeriodRow): Row => {
+  if (r.cpp === 0 && r.cpp2 === 0 && r.ei === 0) return { ...row, suffix: " ✓ maxed" };
+  if (r.cpp < firstRow.cpp || r.ei < firstRow.ei) return { ...row, suffix: " ← partial" };
+  return row;
+};
+
+const toRow = (r: PayPeriodRow, firstRow: PayPeriodRow, hasRrsp: boolean): Row =>
+  R.pipe(
+    baseFields(r),
+    row => withRrsp(hasRrsp)(row, r),
+    row => withAnnotation(firstRow)(row, r),
+  );
 
 export const renderTable = (yearly: YearlyResult, periodsPerYear: number): string => {
   const { rows, totals } = yearly;
