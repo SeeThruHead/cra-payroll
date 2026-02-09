@@ -108,8 +108,56 @@ async function retry<T>(
 
 // ── Puppeteer helpers ───────────────────────────────────────
 
-async function selectOption(page: Page, selector: string, value: string): Promise<Result<void, string>> {
-  return safe(page.select(selector, value).then(() => {}), `select ${selector}`);
+/** Select an option by finding the <select> via label text and using evaluate to set + dispatch */
+async function selectByLabel(page: Page, labelMatch: string, optionText: string): Promise<Result<void, string>> {
+  const result = await safe(
+    page.evaluate((match: string, text: string) => {
+      const selects = Array.from(document.querySelectorAll("select"));
+      for (const s of selects) {
+        const label = (s as any).labels?.[0]?.textContent ?? "";
+        const title = s.title ?? "";
+        if (label.includes(match) || title.includes(match)) {
+          const opts = Array.from(s.options);
+          const opt = opts.find(o => o.text.includes(text));
+          if (opt) {
+            s.value = opt.value;
+            s.dispatchEvent(new Event("change", { bubbles: true }));
+            s.dispatchEvent(new Event("input", { bubbles: true }));
+            // Also trigger Angular's ngModel change detection
+            const ev = new Event("change", { bubbles: true });
+            Object.defineProperty(ev, "target", { value: s });
+            s.dispatchEvent(ev);
+            return { ok: true };
+          }
+          return { ok: false, error: `Option "${text}" not found` };
+        }
+      }
+      return { ok: false, error: `Select with label "${match}" not found` };
+    }, labelMatch, optionText),
+    `select ${labelMatch}=${optionText}`
+  );
+  if (result.isErr()) return err(result.error);
+  if (!result.value.ok) return err(result.value.error!);
+  return ok(undefined);
+}
+
+/** Select by element ID using evaluate (avoids CSS selector issues with UUIDs) */
+async function selectById(page: Page, id: string, value: string): Promise<Result<void, string>> {
+  const cleanId = id.replace(/^#/, "");
+  const result = await safe(
+    page.evaluate((elId: string, val: string) => {
+      const s = document.getElementById(elId) as HTMLSelectElement | null;
+      if (!s) return false;
+      s.value = val;
+      s.dispatchEvent(new Event("change", { bubbles: true }));
+      s.dispatchEvent(new Event("input", { bubbles: true }));
+      return true;
+    }, cleanId, value),
+    `select #${cleanId}=${value}`
+  );
+  if (result.isErr()) return err(result.error);
+  if (!result.value) return err(`Element #${cleanId} not found`);
+  return ok(undefined);
 }
 
 async function waitForNav(page: Page, urlPart: string): Promise<Result<void, string>> {
@@ -152,34 +200,52 @@ async function click(page: Page, selector: string, label: string): Promise<Resul
   return safe(el.value!.click(), `click ${label}`);
 }
 
-async function type(page: Page, selector: string, value: string, label: string): Promise<Result<void, string>> {
+/** Clear and type into an input using keyboard events (not .value =) */
+async function clearAndType(page: Page, selector: string, value: string, label: string): Promise<Result<void, string>> {
   const el = await safe(page.waitForSelector(selector, { visible: true, timeout: ACTION_TIMEOUT }), `find ${label}`);
   if (el.isErr()) return err(el.error);
-  // Clear and type
+  // Triple click to select all, then type to replace
   await el.value!.click({ clickCount: 3 });
-  return safe(el.value!.type(value), `type ${label}`);
+  return safe(page.keyboard.type(value), `type ${label}`);
 }
 
-async function checkBox(page: Page, selector: string, label: string): Promise<Result<void, string>> {
-  const el = await safe(page.waitForSelector(selector, { visible: true, timeout: ACTION_TIMEOUT }), `find ${label}`);
-  if (el.isErr()) return err(el.error);
-  const checked = await el.value!.evaluate((e: any) => e.checked);
-  if (!checked) return safe(el.value!.click(), `check ${label}`);
+/** Check for validation errors on the page */
+async function checkForErrors(page: Page): Promise<Result<void, string>> {
+  const errorText = await page.evaluate(() => {
+    // Look for common error patterns on CRA forms
+    const errorEls = document.querySelectorAll('.error, .alert-danger, [role="alert"], .text-danger, .error-message');
+    const texts: string[] = [];
+    errorEls.forEach(el => {
+      const t = (el as HTMLElement).innerText?.trim();
+      if (t && t.length > 0 && !t.includes("Loading")) texts.push(t);
+    });
+    return texts.join("; ");
+  }).catch(() => "");
+
+  if (errorText) {
+    log(`form errors detected: ${errorText}`);
+    return err(`CRA form validation error: ${errorText}`);
+  }
   return ok(undefined);
 }
 
-async function clickRadio(page: Page, namePattern: string, label: string): Promise<Result<void, string>> {
-  // Find radio by name attribute pattern
-  const result = await safe(
-    page.$$eval("input[type='radio']", (radios, pattern) => {
-      const r = radios.find((el: any) => el.name && new RegExp(pattern, "i").test(el.labels?.[0]?.textContent ?? el.name));
-      if (r) { (r as HTMLInputElement).click(); return true; }
-      return false;
-    }, namePattern),
-    `find radio ${label}`
-  );
-  if (result.isErr()) return err(result.error);
-  if (!result.value) return err(`Radio not found: ${label}`);
+/** Click Next and handle either navigation or validation error */
+async function clickNextAndAdvance(page: Page, buttonSelector: string, nextUrlPart: string, label: string, cleanup: () => Promise<void>): Promise<Result<void, string>> {
+  const clickResult = await click(page, buttonSelector, label);
+  if (clickResult.isErr()) { await cleanup(); return err(clickResult.error); }
+
+  // Race: either we navigate to the next step, or errors appear
+  const navResult = await waitForNav(page, nextUrlPart);
+  if (navResult.isErr()) {
+    // Check if there's a validation error on the page
+    const errors = await checkForErrors(page);
+    if (errors.isErr()) {
+      await cleanup();
+      return err(errors.error);
+    }
+    await cleanup();
+    return err(navResult.error);
+  }
   return ok(undefined);
 }
 
@@ -220,7 +286,13 @@ export async function calculatePayroll(
           setTimeout(() => reject(new Error(`Browser launch timed out (${LAUNCH_TIMEOUT / 1000}s)`)), LAUNCH_TIMEOUT)
         ),
       ]),
-      (e: any) => e.message ?? String(e)
+      (e: any) => {
+        const msg = e.message ?? String(e);
+        if (msg.includes("Executable doesn't exist") || msg.includes("Cannot find")) {
+          return `Chrome not found. Install Google Chrome from https://www.google.com/chrome/\n\n(${msg})`;
+        }
+        return msg;
+      }
     ),
     3, 1000, "browser launch"
   );
@@ -253,135 +325,103 @@ export async function calculatePayroll(
   log("entry page loaded");
 
   // Click Next on entry
-  const nextEntry = await click(page, 'button[type="submit"], button.btn-primary', "Next button");
-  if (nextEntry.isErr()) { await cleanup(); return err(nextEntry.error); }
-
-  const step1 = await waitForNav(page, "step1");
-  if (step1.isErr()) { await cleanup(); return err(step1.error); }
+  const step1Nav = await clickNextAndAdvance(page, 'button[type="submit"], button.btn-primary', "step1", "Next entry", cleanup);
+  if (step1Nav.isErr()) return err(step1Nav.error);
 
   // ── Step 1 — Employee info ──
   log("filling step 1...");
 
-  // Province
-  const provinceSelect = await safe(
-    page.$$eval("select", (selects, prov) => {
-      const s = selects.find((el: any) => el.labels?.[0]?.textContent?.includes("Province"));
-      if (s) { (s as HTMLSelectElement).value = ""; return s.id; }
-      return null;
-    }, config.province),
-    "find province select"
-  );
-  // Use the select by evaluating options
-  const provResult = await safe(
-    page.$$eval("select", (selects, prov) => {
-      for (const s of selects) {
-        const label = (s as any).labels?.[0]?.textContent ?? "";
-        if (label.includes("Province") || label.includes("province")) {
-          const opts = Array.from((s as HTMLSelectElement).options);
-          const match = opts.find(o => o.text.includes(prov));
-          if (match) {
-            (s as HTMLSelectElement).value = match.value;
-            s.dispatchEvent(new Event("change", { bubbles: true }));
-            return true;
-          }
-        }
-      }
-      return false;
-    }, config.province),
-    "select province"
-  );
-  if (provResult.isErr()) { await cleanup(); return err(provResult.error); }
+  // Province — use page.select() for proper event firing
+  const provSelect = await selectByLabel(page, "Province", config.province);
+  if (provSelect.isErr()) { await cleanup(); return err(provSelect.error); }
+  log(`province: ${config.province}`);
 
   // Pay period
-  const ppResult = await safe(
-    page.$$eval("select", (selects, pp) => {
-      for (const s of selects) {
-        const label = (s as any).labels?.[0]?.textContent ?? "";
-        if (label.includes("Pay period") || label.includes("pay period")) {
-          const opts = Array.from((s as HTMLSelectElement).options);
-          const match = opts.find(o => o.text.includes(pp));
-          if (match) {
-            (s as HTMLSelectElement).value = match.value;
-            s.dispatchEvent(new Event("change", { bubbles: true }));
-            return true;
-          }
-        }
-      }
-      return false;
-    }, config.payPeriod),
-    "select pay period"
-  );
-  if (ppResult.isErr()) { await cleanup(); return err(ppResult.error); }
+  const ppSelect = await selectByLabel(page, "Pay period", config.payPeriod);
+  if (ppSelect.isErr()) { await cleanup(); return err(ppSelect.error); }
+  log(`pay period: ${config.payPeriod}`);
 
-  // Year — select the latest
+  // Year — find latest and select it
   const yearResult = await safe(
-    page.$$eval("select", (selects) => {
-      const s = selects.find((el: any) => el.id === "datePaidYear" || el.title?.includes("year"));
-      if (!s) return false;
-      const opts = Array.from((s as HTMLSelectElement).options)
+    page.evaluate(() => {
+      const selects = Array.from(document.querySelectorAll("select"));
+      const s = selects.find(el => el.id === "datePaidYear" || el.title?.toLowerCase().includes("year"));
+      if (!s) return null;
+      const opts = Array.from(s.options)
         .map(o => parseInt(o.value))
         .filter(n => !isNaN(n))
         .sort((a, b) => b - a);
-      if (opts.length === 0) return false;
-      (s as HTMLSelectElement).value = opts[0].toString();
+      if (opts.length === 0) return null;
+      s.value = opts[0].toString();
       s.dispatchEvent(new Event("change", { bubbles: true }));
-      return true;
+      s.dispatchEvent(new Event("input", { bubbles: true }));
+      return opts[0].toString();
     }),
     "select year"
   );
   if (yearResult.isErr()) { await cleanup(); return err(yearResult.error); }
+  if (!yearResult.value) { await cleanup(); return err("No valid years in dropdown"); }
+  log(`year: ${yearResult.value}`);
 
-  // Month
+  // Month — select January
   const monthResult = await safe(
-    page.$eval('select[title*="month" i], #datePaidMonth', (s: any) => {
-      const opts = Array.from((s as HTMLSelectElement).options);
-      const jan = opts.find((o: any) => o.text.includes("January") || o.value === "1" || o.value === "01");
+    page.evaluate(() => {
+      const selects = Array.from(document.querySelectorAll("select"));
+      const s = selects.find(el => el.id === "datePaidMonth" || el.title?.toLowerCase().includes("month"));
+      if (!s) return false;
+      const opts = Array.from(s.options);
+      const jan = opts.find(o => o.text.includes("January") || o.value === "1" || o.value === "01");
       if (jan) {
         s.value = jan.value;
         s.dispatchEvent(new Event("change", { bubbles: true }));
+        s.dispatchEvent(new Event("input", { bubbles: true }));
       }
       return true;
     }),
     "select month"
   );
-  if (monthResult.isErr()) log(`month select warning: ${monthResult.error}`);
+  if (monthResult.isOk()) log("month: January");
 
-  // Day
+  // Day — select 15
   const dayResult = await safe(
-    page.$eval('select[title*="day" i], #datePaidDay', (s: any) => {
-      const opts = Array.from((s as HTMLSelectElement).options);
-      const d15 = opts.find((o: any) => o.value === "15");
+    page.evaluate(() => {
+      const selects = Array.from(document.querySelectorAll("select"));
+      const s = selects.find(el => el.id === "datePaidDay" || el.title?.toLowerCase().includes("day"));
+      if (!s) return false;
+      const d15 = Array.from(s.options).find(o => o.value === "15");
       if (d15) {
         s.value = d15.value;
         s.dispatchEvent(new Event("change", { bubbles: true }));
+        s.dispatchEvent(new Event("input", { bubbles: true }));
       }
       return true;
     }),
     "select day"
   );
-  if (dayResult.isErr()) log(`day select warning: ${dayResult.error}`);
+  if (dayResult.isOk()) log("day: 15");
 
-  // Click Next
-  const nextStep1 = await click(page, 'button[type="submit"], button.btn-primary', "Next step 1");
-  if (nextStep1.isErr()) { await cleanup(); return err(nextStep1.error); }
+  // Small delay to let Angular digest the changes
+  await sleep(300);
 
-  const step2 = await waitForNav(page, "step2");
-  if (step2.isErr()) { await cleanup(); return err(step2.error); }
+  // Click Next → step2
+  const step2Nav = await clickNextAndAdvance(page, 'button[type="submit"], button.btn-primary', "step2", "Next step 1", cleanup);
+  if (step2Nav.isErr()) return err(step2Nav.error);
 
   // ── Step 2 — Salary info ──
   log("filling step 2...");
 
-  // Find salary input and fill it
-  const salaryResult = await safe(
-    page.$$eval("input[type='text'], input[type='number']", (inputs, salary) => {
+  // Fill salary using evaluate to find by label, then keyboard to type
+  const salaryFill = await safe(
+    page.evaluate((val: string) => {
+      const inputs = Array.from(document.querySelectorAll("input"));
       for (const inp of inputs) {
         const label = (inp as any).labels?.[0]?.textContent ?? "";
-        const name = (inp as HTMLInputElement).name ?? "";
+        const name = inp.name ?? "";
         if (label.includes("Salary or wages") || name.includes("Salary") || name.includes("salary")) {
-          const el = inp as HTMLInputElement;
-          el.value = salary;
-          el.dispatchEvent(new Event("input", { bubbles: true }));
-          el.dispatchEvent(new Event("change", { bubbles: true }));
+          inp.focus();
+          inp.value = val;
+          inp.dispatchEvent(new Event("input", { bubbles: true }));
+          inp.dispatchEvent(new Event("change", { bubbles: true }));
           return true;
         }
       }
@@ -389,37 +429,40 @@ export async function calculatePayroll(
     }, salaryPerPeriod),
     "fill salary"
   );
-  if (salaryResult.isErr()) { await cleanup(); return err(salaryResult.error); }
+  if (salaryFill.isErr()) { await cleanup(); return err(salaryFill.error); }
+  if (!salaryFill.value) { await cleanup(); return err("Salary input not found"); }
+  log(`salary: ${salaryPerPeriod}/period`);
 
   // Employer RRSP
   if (config.rrspEmployerPercent > 0) {
     log("checking employer RRSP...");
-    const checkResult = await safe(
-      page.$$eval("input[type='checkbox']", (boxes) => {
+    await safe(
+      page.evaluate(() => {
+        const boxes = Array.from(document.querySelectorAll("input[type='checkbox']"));
         const cb = boxes.find((b: any) => {
           const label = b.labels?.[0]?.textContent ?? b.name ?? "";
           return label.includes("Employer") && label.includes("RRSP");
-        });
-        if (cb && !(cb as HTMLInputElement).checked) (cb as HTMLInputElement).click();
+        }) as HTMLInputElement | undefined;
+        if (cb && !cb.checked) cb.click();
         return !!cb;
       }),
       "check employer RRSP"
     );
-    if (checkResult.isErr()) { await cleanup(); return err(checkResult.error); }
-
-    await sleep(500); // Wait for field to appear
+    await sleep(500);
 
     const fillResult = await safe(
-      page.$$eval("input[type='text'], input[type='number']", (inputs, val) => {
+      page.evaluate((val: string) => {
+        const inputs = Array.from(document.querySelectorAll("input"));
         for (const inp of inputs) {
           const label = (inp as any).labels?.[0]?.textContent ?? "";
-          const name = (inp as HTMLInputElement).name ?? "";
-          if ((label.includes("Employer") && label.includes("RRSP")) || (name.includes("Employer") && name.includes("RRSP"))) {
-            if ((inp as HTMLInputElement).type === "text" || (inp as HTMLInputElement).type === "number") {
-              const el = inp as HTMLInputElement;
-              el.value = val;
-              el.dispatchEvent(new Event("input", { bubbles: true }));
-              el.dispatchEvent(new Event("change", { bubbles: true }));
+          const name = inp.name ?? "";
+          if ((label.includes("Employer") && label.includes("RRSP")) ||
+              (name.includes("Employer") && name.includes("RRSP"))) {
+            if (inp.type !== "checkbox" && inp.offsetParent !== null) {
+              inp.focus();
+              inp.value = val;
+              inp.dispatchEvent(new Event("input", { bubbles: true }));
+              inp.dispatchEvent(new Event("change", { bubbles: true }));
               return true;
             }
           }
@@ -428,53 +471,55 @@ export async function calculatePayroll(
       }, rrspEmployerPerPeriod),
       "fill employer RRSP"
     );
-    if (fillResult.isErr()) { await cleanup(); return err(fillResult.error); }
+    if (fillResult.isOk()) log(`employer RRSP: ${rrspEmployerPerPeriod}/period`);
   }
 
   // Employee RRSP
   if (config.rrspEmployeePercent > 0) {
     log("checking employee RRSP...");
-    const checkResult = await safe(
-      page.$$eval("input[type='checkbox']", (boxes) => {
+    await safe(
+      page.evaluate(() => {
+        const boxes = Array.from(document.querySelectorAll("input[type='checkbox']"));
         const cb = boxes.find((b: any) => {
           const label = b.labels?.[0]?.textContent ?? b.name ?? "";
           return label.includes("Employee") && label.includes("RRSP");
-        });
-        if (cb && !(cb as HTMLInputElement).checked) (cb as HTMLInputElement).click();
+        }) as HTMLInputElement | undefined;
+        if (cb && !cb.checked) cb.click();
         return !!cb;
       }),
       "check employee RRSP"
     );
-    if (checkResult.isErr()) { await cleanup(); return err(checkResult.error); }
-
-    await sleep(500); // Wait for field to appear
+    await sleep(500);
 
     const fillResult = await safe(
-      page.$$eval("input[type='text'], input[type='number']", (inputs, val) => {
+      page.evaluate((val: string) => {
+        const inputs = Array.from(document.querySelectorAll("input"));
         for (const inp of inputs) {
           const label = (inp as any).labels?.[0]?.textContent ?? "";
-          const name = (inp as HTMLInputElement).name ?? "";
-          if (label.includes("deduct at source") || (name.includes("Employee") && name.includes("RRSP") && name.includes("deduct"))) {
-            const el = inp as HTMLInputElement;
-            el.value = val;
-            el.dispatchEvent(new Event("input", { bubbles: true }));
-            el.dispatchEvent(new Event("change", { bubbles: true }));
-            return true;
+          const name = inp.name ?? "";
+          if (label.includes("deduct at source") ||
+              (name.includes("Employee") && name.includes("RRSP") && name.includes("deduct"))) {
+            if (inp.type !== "checkbox" && inp.offsetParent !== null) {
+              inp.focus();
+              inp.value = val;
+              inp.dispatchEvent(new Event("input", { bubbles: true }));
+              inp.dispatchEvent(new Event("change", { bubbles: true }));
+              return true;
+            }
           }
         }
         return false;
       }, rrspEmployeePerPeriod),
       "fill employee RRSP"
     );
-    if (fillResult.isErr()) { await cleanup(); return err(fillResult.error); }
+    if (fillResult.isOk()) log(`employee RRSP: ${rrspEmployeePerPeriod}/period`);
   }
 
-  // Click Next
-  const nextStep2 = await click(page, 'button[type="submit"], button.btn-primary', "Next step 2");
-  if (nextStep2.isErr()) { await cleanup(); return err(nextStep2.error); }
+  await sleep(300);
 
-  const step3 = await waitForNav(page, "step3");
-  if (step3.isErr()) { await cleanup(); return err(step3.error); }
+  // Click Next → step3
+  const step3Nav = await clickNextAndAdvance(page, 'button[type="submit"], button.btn-primary', "step3", "Next step 2", cleanup);
+  if (step3Nav.isErr()) return err(step3Nav.error);
 
   // ── Step 3 — CPP / EI ──
   log("filling step 3...");
@@ -492,6 +537,7 @@ export async function calculatePayroll(
       "select CPP maxed"
     );
     if (cppResult.isErr()) log(`CPP radio warning: ${cppResult.error}`);
+    log("CPP maxed: checked");
   }
 
   if (config.eiMaxedOut) {
@@ -507,9 +553,12 @@ export async function calculatePayroll(
       "select EI maxed"
     );
     if (eiResult.isErr()) log(`EI radio warning: ${eiResult.error}`);
+    log("EI maxed: checked");
   }
 
-  // Click Calculate
+  await sleep(300);
+
+  // Click Calculate → results
   const calcBtn = await safe(
     page.$$eval("button", (buttons) => {
       const b = buttons.find((el: any) => el.textContent?.includes("Calculate"));
@@ -521,7 +570,12 @@ export async function calculatePayroll(
   if (calcBtn.isErr()) { await cleanup(); return err(calcBtn.error); }
 
   const resultsNav = await waitForNav(page, "results");
-  if (resultsNav.isErr()) { await cleanup(); return err(resultsNav.error); }
+  if (resultsNav.isErr()) {
+    const errors = await checkForErrors(page);
+    if (errors.isErr()) { await cleanup(); return err(errors.error); }
+    await cleanup();
+    return err(resultsNav.error);
+  }
 
   // ── Results ──
   log("waiting for results...");
