@@ -314,7 +314,7 @@ const wantTable = values.table ?? false;
 const wantAnnual = values.annual ?? false;
 const wantMonthly = values.monthly ?? false;
 
-console.log("\n🇨🇦 CRA Payroll Deductions Calculator");
+console.log("\nCRA Payroll Deductions Calculator");
 console.log("─".repeat(40));
 console.log(`Province:          ${config.province}`);
 console.log(`Annual Salary:     $${fmt(config.annualSalary)}`);
