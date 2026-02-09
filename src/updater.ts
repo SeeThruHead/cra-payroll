@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, renameSync, unlinkSync, chmodSync } from "fs";
 import { dirname, resolve } from "path";
 
 const REPO = "SeeThruHead/cra-payroll";
-const VERSION = "0.0.5";
+const VERSION = "0.0.6";
 
 export function currentVersion(): string {
   return VERSION;
@@ -82,15 +82,31 @@ export async function selfUpdate(): Promise<Result<string, string>> {
   console.log(`Downloading ${update.downloadUrl}...\n`);
 
   // Figure out where the current binary lives
-  const currentBinary = process.argv[0];
-  if (!currentBinary || !existsSync(currentBinary)) {
-    return err(`Can't find current binary path: ${currentBinary}`);
+  // Find the binary path
+  let binaryPath = "";
+
+  // Try process.execPath first (works for Bun compiled binaries)
+  if (process.execPath && existsSync(process.execPath) && !process.execPath.endsWith("/bun")) {
+    binaryPath = process.execPath;
   }
 
-  const target = getTarget();
-  if (target.isErr()) return err(target.error);
+  // Fallback: which
+  if (!binaryPath) {
+    try {
+      const which = execSync("which cra-payroll", { encoding: "utf-8" }).trim();
+      if (which && existsSync(which)) binaryPath = which;
+    } catch {}
+  }
 
-  const tmpPath = `${currentBinary}.update`;
+  if (!binaryPath) {
+    return err("Can't find current binary path. Try reinstalling with the install script.");
+  }
+
+  return doUpdate(binaryPath, update);
+}
+
+function doUpdate(binaryPath: string, update: ReleaseInfo): Result<string, string> {
+  const tmpPath = `${binaryPath}.update`;
 
   try {
     // Download
@@ -105,20 +121,19 @@ export async function selfUpdate(): Promise<Result<string, string>> {
     chmodSync(tmpPath, 0o755);
 
     // Replace current binary
-    const backupPath = `${currentBinary}.bak`;
     try {
-      renameSync(currentBinary, backupPath);
-      renameSync(tmpPath, currentBinary);
+      const backupPath = `${binaryPath}.bak`;
+      renameSync(binaryPath, backupPath);
+      renameSync(tmpPath, binaryPath);
       try { unlinkSync(backupPath); } catch {}
-    } catch (e: any) {
+    } catch {
       // Might need sudo
-      console.log("\n🔐 Need sudo to replace binary...");
-      execSync(`sudo mv "${tmpPath}" "${currentBinary}"`, { stdio: "inherit" });
+      console.log("\nNeed sudo to replace binary...");
+      execSync(`sudo mv "${tmpPath}" "${binaryPath}"`, { stdio: "inherit" });
     }
 
-    return ok(`✅ Updated to ${update.tag}! Run 'cra-payroll --version' to verify.`);
+    return ok(`Updated to ${update.tag}! Run 'cra-payroll --version' to verify.`);
   } catch (e: any) {
-    // Clean up temp file
     try { unlinkSync(tmpPath); } catch {}
     return err(`Update failed: ${e.message}`);
   }
