@@ -1,5 +1,7 @@
 import { describe, test, expect, afterEach } from "bun:test";
-import { calculatePayroll, setVerbose, type PayrollConfig } from "./calculator";
+import { calculatePayroll } from "./cra";
+import { setVerbose } from "./browser";
+import type { PayrollConfig } from "./types";
 
 setVerbose(true);
 

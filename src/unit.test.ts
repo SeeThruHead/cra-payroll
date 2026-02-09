@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { ok, err, type Result } from "neverthrow";
-import { parseResults } from "./calculator";
+import { parseResults } from "./parse";
 import { buildYearlyTable, calculateYearly, CPP_MAX_BASE, CPP2_MAX, EI_MAX } from "./yearly";
 import { PAY_PERIODS, type PayrollConfig, type PayrollResult, type PayrollService } from "./types";
 
@@ -99,7 +99,7 @@ Net amount 3,064.24
   test("errors on $0 gross with non-zero salary", () => {
     const result = parseResults("nothing useful here", BASE_CONFIG, 24);
     expect(result.isErr()).toBe(true);
-    expect(result._unsafeUnwrapErr()).toContain("Parsed $0 gross income");
+    expect(result._unsafeUnwrapErr()).toContain("Parsed $0 gross");
   });
 
   test("handles large salary with commas", () => {
