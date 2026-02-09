@@ -1,48 +1,10 @@
 import * as R from "remeda";
-import { money, line } from "./format";
+import { money, line, when } from "./format";
 import type { YearlyResult, PayPeriodRow } from "../yearly";
 
-interface Column {
-  label: string;
-  row: (r: PayPeriodRow) => number;
-  total: (t: YearlyResult["totals"], takeHome: number) => number | null;
-}
-
-const buildColumns = (hasRrsp: boolean): Column[] => {
-  const cols: Column[] = [
-    { label: "Gross",    row: r => r.grossIncome,   total: t => t.grossIncome },
-    { label: "Fed Tax",  row: r => r.federalTax,    total: t => t.federalTax },
-    { label: "Prov Tax", row: r => r.provincialTax, total: t => t.provincialTax },
-    { label: "CPP",      row: r => r.cpp,           total: t => t.cpp },
-    { label: "CPP2",     row: r => r.cpp2,          total: t => t.cpp2 },
-    { label: "EI",       row: r => r.ei,            total: t => t.ei },
-    { label: "Net Pay",  row: r => r.netPay,        total: t => t.netPay },
-  ];
-
-  if (hasRrsp) {
-    cols.push(
-      { label: "RRSP Emp",  row: r => r.rrspEmployee,            total: t => t.rrspEmployee },
-      { label: "Take Home", row: r => r.netPay - r.rrspEmployee, total: (t, th) => th },
-    );
-  }
-
-  cols.push({
-    label: "Cum CPP/EI",
-    row: r => r.cumulativeCpp + r.cumulativeCpp2 + r.cumulativeEi,
-    total: () => null,
-  });
-
-  return cols;
-};
-
-const colWidth = (col: Column, totals: YearlyResult["totals"], takeHome: number): number => {
-  const totalVal = col.total(totals, takeHome);
-  return Math.max(col.label.length, totalVal !== null ? money(totalVal).length : 0);
-};
-
-const annotateRow = (r: PayPeriodRow, firstRow: PayPeriodRow): string => {
+const annotate = (r: PayPeriodRow, first: PayPeriodRow): string => {
   if (r.cpp === 0 && r.cpp2 === 0 && r.ei === 0) return " ✓ maxed";
-  if (r.cpp < firstRow.cpp || r.ei < firstRow.ei) return " ← partial";
+  if (r.cpp < first.cpp || r.ei < first.ei) return " ← partial";
   return "";
 };
 
@@ -50,52 +12,56 @@ export const renderTable = (yearly: YearlyResult, periodsPerYear: number): strin
   const { rows, totals } = yearly;
   const hasRrsp = totals.rrspEmployee > 0 || totals.rrspEmployer > 0;
   const takeHome = totals.netPay - totals.rrspEmployee;
-  const columns = buildColumns(hasRrsp);
 
-  const widths = R.map(columns, col => colWidth(col, totals, takeHome));
+  // Column widths sized to the widest value (totals row)
+  const w = (label: string, n: number) => Math.max(label.length, money(n).length);
+  const wGross = w("Gross", totals.grossIncome);
+  const wFed   = w("Fed Tax", totals.federalTax);
+  const wProv  = w("Prov Tax", totals.provincialTax);
+  const wCpp   = w("CPP", totals.cpp);
+  const wCpp2  = w("CPP2", totals.cpp2);
+  const wEi    = w("EI", totals.ei);
+  const wNet   = w("Net Pay", totals.netPay);
+  const wRrsp  = w("RRSP Emp", totals.rrspEmployee);
+  const wTake  = w("Take Home", takeHome);
+  const wCum   = w("Cum CPP/EI", totals.cpp + totals.ei);
 
-  const pad = (s: string, w: number) => s.padStart(w);
-  const fmtCol = (n: number, w: number) => pad(money(n), w);
+  const m = (n: number, width: number) => money(n).padStart(width);
+  const h = (s: string, width: number) => s.padStart(width);
 
-  const headerCells = ["  #  ", ...R.map(R.zip(columns, widths), ([col, w]) => pad(col.label, w))];
-  const headerLine = headerCells.join(" │ ");
-  const W = headerLine.length;
+  const header = [
+    "  #  ",
+    h("Gross", wGross), h("Fed Tax", wFed), h("Prov Tax", wProv),
+    h("CPP", wCpp), h("CPP2", wCpp2), h("EI", wEi), h("Net Pay", wNet),
+    ...(hasRrsp ? [h("RRSP Emp", wRrsp), h("Take Home", wTake)] : []),
+    h("Cum CPP/EI", wCum),
+  ].join(" │ ");
 
-  const lines: string[] = [
-    "Per-Paycheck Table (2026)",
-    line("═", W),
-    headerLine,
-    line("─", W),
-  ];
+  const W = header.length;
 
-  for (const r of rows) {
-    const cells = [
-      ` ${String(r.period).padStart(3)} `,
-      ...R.map(R.zip(columns, widths), ([col, w]) => fmtCol(col.row(r), w)),
-    ];
-    const annotation = annotateRow(r, rows[0]);
-    const lastIdx = cells.length - 1;
-    cells[lastIdx] += annotation;
-    lines.push(cells.join(" │ "));
-  }
+  const renderRow = (r: PayPeriodRow) => [
+    ` ${String(r.period).padStart(3)} `,
+    m(r.grossIncome, wGross), m(r.federalTax, wFed), m(r.provincialTax, wProv),
+    m(r.cpp, wCpp), m(r.cpp2, wCpp2), m(r.ei, wEi), m(r.netPay, wNet),
+    ...(hasRrsp ? [m(r.rrspEmployee, wRrsp), m(r.netPay - r.rrspEmployee, wTake)] : []),
+    m(r.cumulativeCpp + r.cumulativeCpp2 + r.cumulativeEi, wCum) + annotate(r, rows[0]),
+  ].join(" │ ");
 
-  lines.push(line("─", W));
-
-  const totCells = [
+  const totalsRow = [
     " TOT ",
-    ...R.map(R.zip(columns, widths), ([col, w]) => {
-      const val = col.total(totals, takeHome);
-      return val !== null ? fmtCol(val, w) : pad("", w);
-    }),
-  ];
-  lines.push(totCells.join(" │ "));
-  lines.push(line("═", W));
+    m(totals.grossIncome, wGross), m(totals.federalTax, wFed), m(totals.provincialTax, wProv),
+    m(totals.cpp, wCpp), m(totals.cpp2, wCpp2), m(totals.ei, wEi), m(totals.netPay, wNet),
+    ...(hasRrsp ? [m(totals.rrspEmployee, wRrsp), m(takeHome, wTake)] : []),
+    h("", wCum),
+  ].join(" │ ");
 
-  if (hasRrsp) {
-    const perPeriod = money(totals.rrspEmployer / periodsPerYear);
-    lines.push("");
-    lines.push(`  RRSP (Employer match): $${money(totals.rrspEmployer)}/yr ($${perPeriod}/period)`);
-  }
-
-  return lines.join("\n");
+  return `Per-Paycheck Table (2026)
+${line("═", W)}
+${header}
+${line("─", W)}
+${rows.map(renderRow).join("\n")}
+${line("─", W)}
+${totalsRow}
+${line("═", W)}${
+when(hasRrsp, `\n  RRSP (Employer match): $${money(totals.rrspEmployer)}/yr ($${money(totals.rrspEmployer / periodsPerYear)}/period)`)}`;
 };
