@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "bun run src/cli.ts",
     "build": "bun build --compile src/cli.ts --outfile cra-payroll --external electron",
-    "test": "bun test --timeout 120000 --max-concurrency 1"
+    "test": "bun test src/unit.test.ts",
+    "test:integration": "bun test src/integration.test.ts --timeout 120000 --max-concurrency 1",
+    "test:all": "bun test --timeout 120000 --max-concurrency 1"
   },
   "keywords": ["canada", "payroll", "cra", "tax", "deductions", "calculator", "pdoc", "rrsp"],
   "author": "",

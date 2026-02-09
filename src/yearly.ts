@@ -56,7 +56,7 @@ export function buildYearlyTable(
 
   for (let i = 1; i <= periodsPerYear; i++) {
     const cppMaxed = cumCpp >= CPP_MAX_BASE;
-    const cpp2Maxed = cumCpp2 >= CPP2_MAX;
+    const cpp2Maxed = cumCpp2 >= CPP2_MAX || active.cpp2Deductions === 0;
     const eiMaxed = cumEi >= EI_MAX;
     const allMaxed = cppMaxed && cpp2Maxed && eiMaxed;
 
