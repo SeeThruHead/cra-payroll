@@ -29,30 +29,24 @@ const renderRow = (r: Row): string => {
   return `${r.label} │ ${c(r.gross, 10)} │ ${c(r.fedTax, 10)} │ ${c(r.provTax, 10)} │ ${c(r.cpp, 10)} │ ${c(r.cpp2, 6)} │ ${c(r.ei, 10)} │ ${c(r.netPay, 10)}${r.rrspEmp !== undefined ? ` │ ${c(r.rrspEmp, 10)} │ ${c(r.takeHome!, 10)}` : ""} │ ${c(r.cumCppEi, 10)}${r.suffix ?? ""}`;
 };
 
-const makeRowRenderer = (yearly: YearlyResult) => {
-  const hasRrsp = yearly.totals.rrspEmployee > 0 || yearly.totals.rrspEmployer > 0;
-  const firstRow = yearly.rows[0];
-
-  return (r: PayPeriodRow): string => renderRow({
-    label: ` ${String(r.period).padStart(3)} `,
-    gross: r.grossIncome,
-    fedTax: r.federalTax,
-    provTax: r.provincialTax,
-    cpp: r.cpp,
-    cpp2: r.cpp2,
-    ei: r.ei,
-    netPay: r.netPay,
-    ...(hasRrsp ? { rrspEmp: r.rrspEmployee, takeHome: r.netPay - r.rrspEmployee } : {}),
-    cumCppEi: r.cumulativeCpp + r.cumulativeCpp2 + r.cumulativeEi,
-    suffix: annotate(r, firstRow),
-  });
-};
+const toRow = (r: PayPeriodRow, firstRow: PayPeriodRow, hasRrsp: boolean): Row => ({
+  label: ` ${String(r.period).padStart(3)} `,
+  gross: r.grossIncome,
+  fedTax: r.federalTax,
+  provTax: r.provincialTax,
+  cpp: r.cpp,
+  cpp2: r.cpp2,
+  ei: r.ei,
+  netPay: r.netPay,
+  ...(hasRrsp ? { rrspEmp: r.rrspEmployee, takeHome: r.netPay - r.rrspEmployee } : {}),
+  cumCppEi: r.cumulativeCpp + r.cumulativeCpp2 + r.cumulativeEi,
+  suffix: annotate(r, firstRow),
+});
 
 export const renderTable = (yearly: YearlyResult, periodsPerYear: number): string => {
   const { rows, totals } = yearly;
   const hasRrsp = totals.rrspEmployee > 0 || totals.rrspEmployer > 0;
   const takeHome = totals.netPay - totals.rrspEmployee;
-  const rowToString = makeRowRenderer(yearly);
 
   const header = renderRow({
     label: "  #  ",
@@ -76,7 +70,7 @@ export const renderTable = (yearly: YearlyResult, periodsPerYear: number): strin
 ${line("═", W)}
 ${header}
 ${line("─", W)}
-${rows.map(rowToString).join("\n")}
+${rows.map(r => renderRow(toRow(r, rows[0], hasRrsp))).join("\n")}
 ${line("─", W)}
 ${totalsStr}
 ${line("═", W)}${
