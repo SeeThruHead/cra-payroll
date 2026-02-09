@@ -1,5 +1,5 @@
-import { chromium, type Page, type Browser } from "playwright";
-import { ok, err, Result, ResultAsync, fromPromise } from "neverthrow";
+import puppeteer, { type Page, type Browser } from "puppeteer-core";
+import { ok, err, Result, ResultAsync } from "neverthrow";
 
 export interface PayrollConfig {
   province: string;
@@ -37,8 +37,8 @@ const PAY_PERIODS: Record<string, number> = {
   "Biweekly (27 pay periods a year)": 27,
 };
 
-const LAUNCH_TIMEOUT = 3_000;
-const PAGE_TIMEOUT = 3_000;
+const LAUNCH_TIMEOUT = 5_000;
+const PAGE_TIMEOUT = 5_000;
 const ACTION_TIMEOUT = 3_000;
 
 let verbose = false;
@@ -51,10 +51,43 @@ function log(msg: string) {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// ── Find Chrome ─────────────────────────────────────────────
+
+function findChrome(): Result<string, string> {
+  const paths: Record<string, string[]> = {
+    darwin: [
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
+      "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    ],
+    linux: [
+      "/usr/bin/google-chrome",
+      "/usr/bin/google-chrome-stable",
+      "/usr/bin/chromium",
+      "/usr/bin/chromium-browser",
+      "/snap/bin/chromium",
+    ],
+  };
+
+  const candidates = paths[process.platform] ?? [];
+  for (const p of candidates) {
+    try {
+      const { statSync } = require("fs");
+      statSync(p);
+      return ok(p);
+    } catch {}
+  }
+
+  return err(
+    `Chrome not found. Install Google Chrome from https://www.google.com/chrome/\n` +
+    `Searched: ${candidates.join(", ")}`
+  );
+}
+
 // ── Result helpers ──────────────────────────────────────────
 
 function safe<T>(p: Promise<T>, label: string): ResultAsync<T, string> {
-  return fromPromise(p, (e: any) => `${label}: ${e.message ?? e}`);
+  return ResultAsync.fromPromise(p, (e: any) => `${label}: ${e.message ?? e}`);
 }
 
 async function retry<T>(
@@ -73,104 +106,81 @@ async function retry<T>(
   return err(`${label} failed after ${attempts} attempts`);
 }
 
-/** Run a sequence of steps, short-circuiting on the first error and running cleanup */
-async function pipeline(
-  cleanup: () => Promise<void>,
-  ...steps: (() => Promise<Result<unknown, string>>)[]
-): Promise<Result<void, string>> {
-  for (const step of steps) {
-    const result = await step();
-    if (result.isErr()) {
-      await cleanup();
-      return err(result.error);
-    }
-  }
-  return ok(undefined);
+// ── Puppeteer helpers ───────────────────────────────────────
+
+async function selectOption(page: Page, selector: string, value: string): Promise<Result<void, string>> {
+  return safe(page.select(selector, value).then(() => {}), `select ${selector}`);
 }
 
-// ── Browser / page helpers ──────────────────────────────────
-
-function launchBrowser(headless: boolean): ResultAsync<Browser, string> {
-  let timer: ReturnType<typeof setTimeout>;
-  let launched = false;
-
-  return ResultAsync.fromSafePromise<Browser | "__timeout__", never>(
-    Promise.race([
-      chromium.launch({ headless, channel: "chrome" }).then((b) => { launched = true; clearTimeout(timer); return b; }),
-      new Promise<"__timeout__">((resolve) => {
-        timer = setTimeout(() => resolve("__timeout__"), LAUNCH_TIMEOUT);
-      }),
-    ])
-  ).andThen((result) => {
-    if (result === "__timeout__") {
-      return err(`Browser launch timed out (${LAUNCH_TIMEOUT / 1000}s)`);
-    }
-    return ok(result as Browser);
-  }).mapErr((e) => {
-    if (e.includes("Executable doesn't exist") || e.includes("browserType.launch") || e.includes("Cannot find")) {
-      return `Chrome not found. Install Google Chrome from https://www.google.com/chrome/\n\n(${e})`;
-    }
-    return e;
-  });
-}
-
-async function closeBrowser(browser: Browser): Promise<Result<void, string>> {
-  return safe(browser.close(), "browser close");
-}
-
-/** Wait for the CRA loading splash ("Loading/Chargement...") to disappear.
- *  Uses a single locator matching either text. If neither is present, that's fine — means it already loaded. */
-async function waitForLoading(page: Page): Promise<Result<void, string>> {
+async function waitForNav(page: Page, urlPart: string): Promise<Result<void, string>> {
+  log(`waiting for /${urlPart}...`);
   const result = await safe(
-    page.locator("text=/Loading|Chargement/").waitFor({ state: "hidden", timeout: PAGE_TIMEOUT }),
-    "wait for loading splash"
+    page.waitForFunction(
+      (part: string) => window.location.href.includes(part),
+      { timeout: PAGE_TIMEOUT },
+      urlPart
+    ),
+    `navigate to ${urlPart}`
   );
-  // If the locator wasn't found at all, that means the splash was never shown — not an error
-  if (result.isErr() && result.error.includes("waiting for locator")) {
-    log("no loading splash detected, continuing");
-    return ok(undefined);
-  }
-  return result.map(() => undefined);
-}
+  if (result.isErr()) return err(result.error);
 
-async function waitForStep(page: Page, urlSubstring: string): Promise<Result<void, string>> {
-  log(`waiting for /${urlSubstring}...`);
+  // Wait for loading splash to disappear
+  await safe(
+    page.waitForFunction(
+      () => {
+        const body = document.body?.innerText ?? "";
+        return !body.includes("Loading") || body.length > 200;
+      },
+      { timeout: PAGE_TIMEOUT }
+    ),
+    "wait for loading"
+  ).unwrapOr(undefined);
 
-  const nav = await safe(
-    page.waitForURL(`**/${urlSubstring}`, { timeout: PAGE_TIMEOUT }),
-    `navigate to ${urlSubstring}`
-  );
-  if (nav.isErr()) return nav.map(() => undefined);
+  // Wait for main heading
+  await safe(
+    page.waitForSelector("main h1", { visible: true, timeout: ACTION_TIMEOUT }),
+    `${urlPart} heading`
+  ).unwrapOr(undefined);
 
-  const loading = await waitForLoading(page);
-  if (loading.isErr()) return loading;
-
-  const heading = await safe(
-    page.locator("main h1").waitFor({ state: "visible", timeout: ACTION_TIMEOUT }),
-    `${urlSubstring} heading visible`
-  );
-  if (heading.isErr()) return heading.map(() => undefined);
-
-  log(`on /${urlSubstring}`);
+  log(`on /${urlPart}`);
   return ok(undefined);
 }
 
-async function selectLatestYear(page: Page): Promise<Result<void, string>> {
-  const yearSelect = page.locator("#datePaidYear");
-  const optionsResult = await safe(
-    yearSelect.locator("option").allTextContents(),
-    "read year options"
+async function click(page: Page, selector: string, label: string): Promise<Result<void, string>> {
+  const el = await safe(page.waitForSelector(selector, { visible: true, timeout: ACTION_TIMEOUT }), `find ${label}`);
+  if (el.isErr()) return err(el.error);
+  return safe(el.value!.click(), `click ${label}`);
+}
+
+async function type(page: Page, selector: string, value: string, label: string): Promise<Result<void, string>> {
+  const el = await safe(page.waitForSelector(selector, { visible: true, timeout: ACTION_TIMEOUT }), `find ${label}`);
+  if (el.isErr()) return err(el.error);
+  // Clear and type
+  await el.value!.click({ clickCount: 3 });
+  return safe(el.value!.type(value), `type ${label}`);
+}
+
+async function checkBox(page: Page, selector: string, label: string): Promise<Result<void, string>> {
+  const el = await safe(page.waitForSelector(selector, { visible: true, timeout: ACTION_TIMEOUT }), `find ${label}`);
+  if (el.isErr()) return err(el.error);
+  const checked = await el.value!.evaluate((e: any) => e.checked);
+  if (!checked) return safe(el.value!.click(), `check ${label}`);
+  return ok(undefined);
+}
+
+async function clickRadio(page: Page, namePattern: string, label: string): Promise<Result<void, string>> {
+  // Find radio by name attribute pattern
+  const result = await safe(
+    page.$$eval("input[type='radio']", (radios, pattern) => {
+      const r = radios.find((el: any) => el.name && new RegExp(pattern, "i").test(el.labels?.[0]?.textContent ?? el.name));
+      if (r) { (r as HTMLInputElement).click(); return true; }
+      return false;
+    }, namePattern),
+    `find radio ${label}`
   );
-  if (optionsResult.isErr()) return err(optionsResult.error);
-
-  const years = optionsResult.value
-    .map((t) => parseInt(t, 10))
-    .filter((n) => !isNaN(n))
-    .sort((a, b) => b - a);
-
-  if (years.length === 0) return err("No valid years in date dropdown");
-
-  return safe(yearSelect.selectOption(years[0].toString()), "select year").map(() => undefined);
+  if (result.isErr()) return err(result.error);
+  if (!result.value) return err(`Radio not found: ${label}`);
+  return ok(undefined);
 }
 
 // ── Main calculator ─────────────────────────────────────────
@@ -192,169 +202,358 @@ export async function calculatePayroll(
     (config.annualSalary * (config.rrspEmployerPercent / 100)) / periodsPerYear
   ).toFixed(2);
 
+  // Find Chrome
+  const chromePath = findChrome();
+  if (chromePath.isErr()) return err(chromePath.error);
+  log(`using Chrome: ${chromePath.value}`);
+
   // Launch browser with retries
-  const browserResult = await retry(() => launchBrowser(headless), 3, 1000, "browser launch");
+  const browserResult = await retry(
+    () => ResultAsync.fromPromise(
+      Promise.race([
+        puppeteer.launch({
+          headless,
+          executablePath: chromePath.value,
+          args: ["--no-sandbox", "--disable-setuid-sandbox"],
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`Browser launch timed out (${LAUNCH_TIMEOUT / 1000}s)`)), LAUNCH_TIMEOUT)
+        ),
+      ]),
+      (e: any) => e.message ?? String(e)
+    ),
+    3, 1000, "browser launch"
+  );
   if (browserResult.isErr()) return err(browserResult.error);
 
   const browser = browserResult.value;
   log("browser launched");
 
-  const contextResult = await safe(browser.newContext(), "create context");
-  if (contextResult.isErr()) { await closeBrowser(browser); return err(contextResult.error); }
+  const cleanup = async () => { await browser.close().catch(() => {}); };
 
-  const pageResult = await safe(contextResult.value.newPage(), "create page");
-  if (pageResult.isErr()) { await closeBrowser(browser); return err(pageResult.error); }
-
+  const pageResult = await safe(browser.newPage(), "create page");
+  if (pageResult.isErr()) { await cleanup(); return err(pageResult.error); }
   const page = pageResult.value;
   page.setDefaultTimeout(ACTION_TIMEOUT);
 
-  const cleanup = () => closeBrowser(browser).then(() => {});
-
   // ── Entry page with retries ──
   const entryResult = await retry(
-    () => safe(
+    () => ResultAsync.fromPromise(
       (async () => {
         await page.goto("https://apps.cra-arc.gc.ca/ebci/rhpd/beta/entry", {
           timeout: PAGE_TIMEOUT, waitUntil: "domcontentloaded",
         });
-        const loadResult = await waitForLoading(page);
-        if (loadResult.isErr()) throw new Error(loadResult.error);
-        await page.getByRole("button", { name: "Next" }).waitFor({
-          state: "visible", timeout: PAGE_TIMEOUT,
-        });
+        await page.waitForSelector("button", { visible: true, timeout: PAGE_TIMEOUT });
       })(),
-      "load entry page"
+      (e: any) => `load entry page: ${e.message ?? e}`
     ),
     3, 1000, "entry page"
   );
   if (entryResult.isErr()) { await cleanup(); return err(entryResult.error); }
   log("entry page loaded");
 
-  // ── Walk through the wizard ──
-  const wizardResult = await pipeline(
-    cleanup,
-    // Click Next on entry page
-    () => safe(page.getByRole("button", { name: "Next" }).click(), "click Next entry").then(r => r.map(() => undefined)),
-    () => waitForStep(page, "step1"),
+  // Click Next on entry
+  const nextEntry = await click(page, 'button[type="submit"], button.btn-primary', "Next button");
+  if (nextEntry.isErr()) { await cleanup(); return err(nextEntry.error); }
 
-    // Step 1 — Employee info
-    async () => {
-      log("filling step 1...");
-      const province = await safe(page.getByLabel("Province or territory of").selectOption(config.province), "select province");
-      if (province.isErr()) return province.map(() => undefined);
+  const step1 = await waitForNav(page, "step1");
+  if (step1.isErr()) { await cleanup(); return err(step1.error); }
 
-      const payPeriod = await safe(page.getByLabel("Pay period frequency (").selectOption(config.payPeriod), "select pay period");
-      if (payPeriod.isErr()) return payPeriod.map(() => undefined);
+  // ── Step 1 — Employee info ──
+  log("filling step 1...");
 
-      const year = await selectLatestYear(page);
-      if (year.isErr()) return year;
-
-      const month = await safe(
-        page.locator('select[title="Select the month the employee is paid."]').selectOption("January"),
-        "select month"
-      );
-      if (month.isErr()) return month.map(() => undefined);
-
-      const day = await safe(
-        page.locator('select[title="Select the day the employee is paid."]').selectOption("15"),
-        "select day"
-      );
-      if (day.isErr()) return day.map(() => undefined);
-
-      return safe(page.getByRole("button", { name: "Next" }).click(), "click Next step 1").then(r => r.map(() => undefined));
-    },
-    () => waitForStep(page, "step2"),
-
-    // Step 2 — Salary info
-    async () => {
-      log("filling step 2...");
-      const salary = await safe(
-        page.getByRole("textbox", { name: /Salary or wages income per/ }).fill(salaryPerPeriod),
-        "fill salary"
-      );
-      if (salary.isErr()) return salary.map(() => undefined);
-
-      if (config.rrspEmployerPercent > 0) {
-        log("checking employer RRSP...");
-        const check = await safe(
-          page.getByRole("checkbox", { name: /Employer's contributions to the employee's RRSP/ }).check(),
-          "check employer RRSP"
-        );
-        if (check.isErr()) return check.map(() => undefined);
-
-        const field = page.getByRole("textbox", { name: /Employer's contributions to the employee's RRSP/ });
-        const visible = await safe(field.waitFor({ state: "visible" }), "employer RRSP field visible");
-        if (visible.isErr()) return visible.map(() => undefined);
-
-        const fill = await safe(field.fill(rrspEmployerPerPeriod), "fill employer RRSP");
-        if (fill.isErr()) return fill.map(() => undefined);
-      }
-
-      if (config.rrspEmployeePercent > 0) {
-        log("checking employee RRSP...");
-        const check = await safe(
-          page.getByRole("checkbox", { name: /Employee's contributions to RRSPs or RPPs/ }).check(),
-          "check employee RRSP"
-        );
-        if (check.isErr()) return check.map(() => undefined);
-
-        const field = page.getByRole("textbox", { name: /Employee's contributions to a RRSP \(deduct at source\)/ });
-        const visible = await safe(field.waitFor({ state: "visible" }), "employee RRSP field visible");
-        if (visible.isErr()) return visible.map(() => undefined);
-
-        const fill = await safe(field.fill(rrspEmployeePerPeriod), "fill employee RRSP");
-        if (fill.isErr()) return fill.map(() => undefined);
-      }
-
-      return safe(page.getByRole("button", { name: "Next" }).click(), "click Next step 2").then(r => r.map(() => undefined));
-    },
-    () => waitForStep(page, "step3"),
-
-    // Step 3 — CPP / EI
-    async () => {
-      log("filling step 3...");
-      if (config.cppMaxedOut) {
-        const cpp = await safe(page.getByRole("radio", { name: /CPP and second additional CPP/ }).click(), "select CPP maxed");
-        if (cpp.isErr()) return cpp.map(() => undefined);
-      }
-      if (config.eiMaxedOut) {
-        const ei = await safe(page.getByRole("radio", { name: /EI maximum annual premium has/ }).click(), "select EI maxed");
-        if (ei.isErr()) return ei.map(() => undefined);
-      }
-      return safe(page.getByRole("button", { name: "Calculate" }).click(), "click Calculate").then(r => r.map(() => undefined));
-    },
-    () => waitForStep(page, "results"),
+  // Province
+  const provinceSelect = await safe(
+    page.$$eval("select", (selects, prov) => {
+      const s = selects.find((el: any) => el.labels?.[0]?.textContent?.includes("Province"));
+      if (s) { (s as HTMLSelectElement).value = ""; return s.id; }
+      return null;
+    }, config.province),
+    "find province select"
   );
+  // Use the select by evaluating options
+  const provResult = await safe(
+    page.$$eval("select", (selects, prov) => {
+      for (const s of selects) {
+        const label = (s as any).labels?.[0]?.textContent ?? "";
+        if (label.includes("Province") || label.includes("province")) {
+          const opts = Array.from((s as HTMLSelectElement).options);
+          const match = opts.find(o => o.text.includes(prov));
+          if (match) {
+            (s as HTMLSelectElement).value = match.value;
+            s.dispatchEvent(new Event("change", { bubbles: true }));
+            return true;
+          }
+        }
+      }
+      return false;
+    }, config.province),
+    "select province"
+  );
+  if (provResult.isErr()) { await cleanup(); return err(provResult.error); }
 
-  if (wizardResult.isErr()) return err(wizardResult.error);
+  // Pay period
+  const ppResult = await safe(
+    page.$$eval("select", (selects, pp) => {
+      for (const s of selects) {
+        const label = (s as any).labels?.[0]?.textContent ?? "";
+        if (label.includes("Pay period") || label.includes("pay period")) {
+          const opts = Array.from((s as HTMLSelectElement).options);
+          const match = opts.find(o => o.text.includes(pp));
+          if (match) {
+            (s as HTMLSelectElement).value = match.value;
+            s.dispatchEvent(new Event("change", { bubbles: true }));
+            return true;
+          }
+        }
+      }
+      return false;
+    }, config.payPeriod),
+    "select pay period"
+  );
+  if (ppResult.isErr()) { await cleanup(); return err(ppResult.error); }
+
+  // Year — select the latest
+  const yearResult = await safe(
+    page.$$eval("select", (selects) => {
+      const s = selects.find((el: any) => el.id === "datePaidYear" || el.title?.includes("year"));
+      if (!s) return false;
+      const opts = Array.from((s as HTMLSelectElement).options)
+        .map(o => parseInt(o.value))
+        .filter(n => !isNaN(n))
+        .sort((a, b) => b - a);
+      if (opts.length === 0) return false;
+      (s as HTMLSelectElement).value = opts[0].toString();
+      s.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    }),
+    "select year"
+  );
+  if (yearResult.isErr()) { await cleanup(); return err(yearResult.error); }
+
+  // Month
+  const monthResult = await safe(
+    page.$eval('select[title*="month" i], #datePaidMonth', (s: any) => {
+      const opts = Array.from((s as HTMLSelectElement).options);
+      const jan = opts.find((o: any) => o.text.includes("January") || o.value === "1" || o.value === "01");
+      if (jan) {
+        s.value = jan.value;
+        s.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      return true;
+    }),
+    "select month"
+  );
+  if (monthResult.isErr()) log(`month select warning: ${monthResult.error}`);
+
+  // Day
+  const dayResult = await safe(
+    page.$eval('select[title*="day" i], #datePaidDay', (s: any) => {
+      const opts = Array.from((s as HTMLSelectElement).options);
+      const d15 = opts.find((o: any) => o.value === "15");
+      if (d15) {
+        s.value = d15.value;
+        s.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      return true;
+    }),
+    "select day"
+  );
+  if (dayResult.isErr()) log(`day select warning: ${dayResult.error}`);
+
+  // Click Next
+  const nextStep1 = await click(page, 'button[type="submit"], button.btn-primary', "Next step 1");
+  if (nextStep1.isErr()) { await cleanup(); return err(nextStep1.error); }
+
+  const step2 = await waitForNav(page, "step2");
+  if (step2.isErr()) { await cleanup(); return err(step2.error); }
+
+  // ── Step 2 — Salary info ──
+  log("filling step 2...");
+
+  // Find salary input and fill it
+  const salaryResult = await safe(
+    page.$$eval("input[type='text'], input[type='number']", (inputs, salary) => {
+      for (const inp of inputs) {
+        const label = (inp as any).labels?.[0]?.textContent ?? "";
+        const name = (inp as HTMLInputElement).name ?? "";
+        if (label.includes("Salary or wages") || name.includes("Salary") || name.includes("salary")) {
+          const el = inp as HTMLInputElement;
+          el.value = salary;
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+          return true;
+        }
+      }
+      return false;
+    }, salaryPerPeriod),
+    "fill salary"
+  );
+  if (salaryResult.isErr()) { await cleanup(); return err(salaryResult.error); }
+
+  // Employer RRSP
+  if (config.rrspEmployerPercent > 0) {
+    log("checking employer RRSP...");
+    const checkResult = await safe(
+      page.$$eval("input[type='checkbox']", (boxes) => {
+        const cb = boxes.find((b: any) => {
+          const label = b.labels?.[0]?.textContent ?? b.name ?? "";
+          return label.includes("Employer") && label.includes("RRSP");
+        });
+        if (cb && !(cb as HTMLInputElement).checked) (cb as HTMLInputElement).click();
+        return !!cb;
+      }),
+      "check employer RRSP"
+    );
+    if (checkResult.isErr()) { await cleanup(); return err(checkResult.error); }
+
+    await sleep(500); // Wait for field to appear
+
+    const fillResult = await safe(
+      page.$$eval("input[type='text'], input[type='number']", (inputs, val) => {
+        for (const inp of inputs) {
+          const label = (inp as any).labels?.[0]?.textContent ?? "";
+          const name = (inp as HTMLInputElement).name ?? "";
+          if ((label.includes("Employer") && label.includes("RRSP")) || (name.includes("Employer") && name.includes("RRSP"))) {
+            if ((inp as HTMLInputElement).type === "text" || (inp as HTMLInputElement).type === "number") {
+              const el = inp as HTMLInputElement;
+              el.value = val;
+              el.dispatchEvent(new Event("input", { bubbles: true }));
+              el.dispatchEvent(new Event("change", { bubbles: true }));
+              return true;
+            }
+          }
+        }
+        return false;
+      }, rrspEmployerPerPeriod),
+      "fill employer RRSP"
+    );
+    if (fillResult.isErr()) { await cleanup(); return err(fillResult.error); }
+  }
+
+  // Employee RRSP
+  if (config.rrspEmployeePercent > 0) {
+    log("checking employee RRSP...");
+    const checkResult = await safe(
+      page.$$eval("input[type='checkbox']", (boxes) => {
+        const cb = boxes.find((b: any) => {
+          const label = b.labels?.[0]?.textContent ?? b.name ?? "";
+          return label.includes("Employee") && label.includes("RRSP");
+        });
+        if (cb && !(cb as HTMLInputElement).checked) (cb as HTMLInputElement).click();
+        return !!cb;
+      }),
+      "check employee RRSP"
+    );
+    if (checkResult.isErr()) { await cleanup(); return err(checkResult.error); }
+
+    await sleep(500); // Wait for field to appear
+
+    const fillResult = await safe(
+      page.$$eval("input[type='text'], input[type='number']", (inputs, val) => {
+        for (const inp of inputs) {
+          const label = (inp as any).labels?.[0]?.textContent ?? "";
+          const name = (inp as HTMLInputElement).name ?? "";
+          if (label.includes("deduct at source") || (name.includes("Employee") && name.includes("RRSP") && name.includes("deduct"))) {
+            const el = inp as HTMLInputElement;
+            el.value = val;
+            el.dispatchEvent(new Event("input", { bubbles: true }));
+            el.dispatchEvent(new Event("change", { bubbles: true }));
+            return true;
+          }
+        }
+        return false;
+      }, rrspEmployeePerPeriod),
+      "fill employee RRSP"
+    );
+    if (fillResult.isErr()) { await cleanup(); return err(fillResult.error); }
+  }
+
+  // Click Next
+  const nextStep2 = await click(page, 'button[type="submit"], button.btn-primary', "Next step 2");
+  if (nextStep2.isErr()) { await cleanup(); return err(nextStep2.error); }
+
+  const step3 = await waitForNav(page, "step3");
+  if (step3.isErr()) { await cleanup(); return err(step3.error); }
+
+  // ── Step 3 — CPP / EI ──
+  log("filling step 3...");
+
+  if (config.cppMaxedOut) {
+    const cppResult = await safe(
+      page.$$eval("input[type='radio']", (radios) => {
+        const r = radios.find((el: any) => {
+          const label = el.labels?.[0]?.textContent ?? "";
+          return label.includes("CPP") && label.includes("second additional") && label.includes("maximum");
+        });
+        if (r) { (r as HTMLInputElement).click(); return true; }
+        return false;
+      }),
+      "select CPP maxed"
+    );
+    if (cppResult.isErr()) log(`CPP radio warning: ${cppResult.error}`);
+  }
+
+  if (config.eiMaxedOut) {
+    const eiResult = await safe(
+      page.$$eval("input[type='radio']", (radios) => {
+        const r = radios.find((el: any) => {
+          const label = el.labels?.[0]?.textContent ?? "";
+          return label.includes("EI") && label.includes("maximum") && label.includes("premium");
+        });
+        if (r) { (r as HTMLInputElement).click(); return true; }
+        return false;
+      }),
+      "select EI maxed"
+    );
+    if (eiResult.isErr()) log(`EI radio warning: ${eiResult.error}`);
+  }
+
+  // Click Calculate
+  const calcBtn = await safe(
+    page.$$eval("button", (buttons) => {
+      const b = buttons.find((el: any) => el.textContent?.includes("Calculate"));
+      if (b) { (b as HTMLButtonElement).click(); return true; }
+      return false;
+    }),
+    "click Calculate"
+  );
+  if (calcBtn.isErr()) { await cleanup(); return err(calcBtn.error); }
+
+  const resultsNav = await waitForNav(page, "results");
+  if (resultsNav.isErr()) { await cleanup(); return err(resultsNav.error); }
 
   // ── Results ──
   log("waiting for results...");
   const resultsReady = await retry(
-    () => safe(
-      page.locator("text=Net amount").waitFor({ state: "visible", timeout: PAGE_TIMEOUT }),
-      "results render"
+    () => ResultAsync.fromPromise(
+      page.waitForFunction(
+        () => (document.querySelector("main")?.innerText ?? "").includes("Net amount"),
+        { timeout: PAGE_TIMEOUT }
+      ),
+      (e: any) => `results render: ${e.message ?? e}`
     ),
     2, 0, "results render"
   );
 
   if (resultsReady.isErr()) {
-    const bodyResult = await safe(page.locator("body").innerText(), "read body on failure");
-    const bodyText = bodyResult.isOk() ? bodyResult.value.slice(0, 500) : "(could not read page)";
+    const bodyText = await page.evaluate(() => document.body?.innerText?.slice(0, 500) ?? "").catch(() => "(could not read page)");
     log("page content on failure:\n" + bodyText);
     await cleanup();
-    return err(`Results page did not render — 'Net amount' not found. Page: ${bodyText.slice(0, 100)}`);
+    return err(`Results page did not render — 'Net amount' not found. Page: ${String(bodyText).slice(0, 100)}`);
   }
 
-  const textResult = await safe(page.locator("main").innerText(), "read results text");
-  if (textResult.isErr()) { await cleanup(); return err(textResult.error); }
+  const text = await safe(
+    page.evaluate(() => document.querySelector("main")?.innerText ?? ""),
+    "read results text"
+  );
+  if (text.isErr()) { await cleanup(); return err(text.error); }
 
   log("got results, parsing...");
-  const parsed = parseResults(textResult.value, config, periodsPerYear);
+  const parsed = parseResults(text.value, config, periodsPerYear);
 
   log("closing browser");
-  const closeResult = await closeBrowser(browser);
-  if (closeResult.isErr()) log(`warning: ${closeResult.error}`);
+  await browser.close().catch(() => {});
 
   return parsed;
 }

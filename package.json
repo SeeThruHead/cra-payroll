@@ -6,14 +6,13 @@
   "scripts": {
     "dev": "bun run src/cli.ts",
     "build": "bun build --compile src/cli.ts --outfile cra-payroll --external chromium-bidi --external electron",
-    "test": "bun test --timeout 120000 --max-concurrency 1",
-    "postinstall": "bunx playwright install chromium"
+    "test": "bun test --timeout 120000 --max-concurrency 1"
   },
   "keywords": ["canada", "payroll", "cra", "tax", "deductions", "calculator", "pdoc", "rrsp"],
   "author": "",
   "license": "MIT",
   "dependencies": {
     "neverthrow": "^8.2.0",
-    "playwright": "^1.58.2"
+    "puppeteer-core": "^24.37.2"
   }
 }
