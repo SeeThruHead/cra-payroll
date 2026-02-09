@@ -1,13 +1,7 @@
-/**
- * Yearly paycheck table builder.
- * Pure functions — takes two PayrollResults (active + maxed CPP/EI)
- * and produces the per-period breakdown with CPP/EI tracking.
- */
 import { ok, err, type Result } from "neverthrow";
 import * as R from "remeda";
 import { PAY_PERIODS, type PayrollConfig, type PayrollResult, type PayrollService } from "./types";
 
-// 2026 CPP/EI maximums
 export const CPP_MAX_BASE = 4_230.45;
 export const CPP2_MAX = 416.00;
 export const EI_MAX = 1_123.07;
@@ -58,48 +52,51 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 const clampToRemaining = (perPeriod: number, cumulative: number, max: number): number =>
   cumulative >= max ? 0 : Math.min(perPeriod, max - cumulative);
 
-const buildRow = (
-  period: number,
-  active: PayrollResult,
-  maxed: PayrollResult,
-  cum: Cumulative,
-): { row: PayPeriodRow; nextCumulative: Cumulative } => {
-  const cpp = clampToRemaining(active.cpp, cum.cpp, CPP_MAX_BASE);
-  const cpp2 = clampToRemaining(active.cpp2, cum.cpp2, CPP2_MAX);
-  const ei = clampToRemaining(active.ei, cum.ei, EI_MAX);
+const periodDeductions = (active: PayrollResult, cum: Cumulative) => ({
+  cpp: clampToRemaining(active.cpp, cum.cpp, CPP_MAX_BASE),
+  cpp2: clampToRemaining(active.cpp2, cum.cpp2, CPP2_MAX),
+  ei: clampToRemaining(active.ei, cum.ei, EI_MAX),
+});
 
-  const allMaxed =
-    (cum.cpp >= CPP_MAX_BASE) &&
-    (cum.cpp2 >= CPP2_MAX || active.cpp2 === 0) &&
-    (cum.ei >= EI_MAX);
+const allMaxed = (cum: Cumulative, active: PayrollResult) =>
+  cum.cpp >= CPP_MAX_BASE &&
+  (cum.cpp2 >= CPP2_MAX || active.cpp2 === 0) &&
+  cum.ei >= EI_MAX;
 
-  const federalTax = allMaxed ? maxed.federalTax : active.federalTax;
-  const provincialTax = allMaxed ? maxed.provincialTax : active.provincialTax;
-  const totalDeductions = federalTax + provincialTax + cpp + cpp2 + ei;
+const periodTaxes = (active: PayrollResult, maxed: PayrollResult, cum: Cumulative) =>
+  allMaxed(cum, active)
+    ? { federalTax: maxed.federalTax, provincialTax: maxed.provincialTax }
+    : { federalTax: active.federalTax, provincialTax: active.provincialTax };
 
-  const nextCumulative: Cumulative = {
-    cpp: round2(cum.cpp + cpp),
-    cpp2: round2(cum.cpp2 + cpp2),
-    ei: round2(cum.ei + ei),
-  };
+const advanceCumulative = (cum: Cumulative, ded: { cpp: number; cpp2: number; ei: number }): Cumulative => ({
+  cpp: round2(cum.cpp + ded.cpp),
+  cpp2: round2(cum.cpp2 + ded.cpp2),
+  ei: round2(cum.ei + ded.ei),
+});
 
-  const row: PayPeriodRow = {
-    period,
-    grossIncome: active.grossIncome,
-    rrspEmployee: active.rrspEmployee,
-    rrspEmployer: active.rrspEmployer,
-    federalTax,
-    provincialTax,
-    cpp, cpp2, ei,
-    totalDeductions,
-    netPay: active.grossIncome - totalDeductions,
-    cumulativeCpp: nextCumulative.cpp,
-    cumulativeCpp2: nextCumulative.cpp2,
-    cumulativeEi: nextCumulative.ei,
-  };
-
-  return { row, nextCumulative };
-};
+const buildRow = (period: number, active: PayrollResult, maxed: PayrollResult, cum: Cumulative) =>
+  R.pipe(
+    periodDeductions(active, cum),
+    ded => ({ ded, taxes: periodTaxes(active, maxed, cum) }),
+    ({ ded, taxes }) => ({ ded, taxes, totalDed: taxes.federalTax + taxes.provincialTax + ded.cpp + ded.cpp2 + ded.ei }),
+    ({ ded, taxes, totalDed }) => ({ ded, taxes, totalDed, nextCum: advanceCumulative(cum, ded) }),
+    ({ ded, taxes, totalDed, nextCum }): { row: PayPeriodRow; nextCumulative: Cumulative } => ({
+      row: {
+        period,
+        grossIncome: active.grossIncome,
+        rrspEmployee: active.rrspEmployee,
+        rrspEmployer: active.rrspEmployer,
+        ...taxes,
+        ...ded,
+        totalDeductions: totalDed,
+        netPay: active.grossIncome - totalDed,
+        cumulativeCpp: nextCum.cpp,
+        cumulativeCpp2: nextCum.cpp2,
+        cumulativeEi: nextCum.ei,
+      },
+      nextCumulative: nextCum,
+    }),
+  );
 
 const sumTotals = (rows: PayPeriodRow[]): YearlyResult["totals"] => {
   const sum = (fn: (r: PayPeriodRow) => number) => round2(R.sumBy(rows, fn));
@@ -122,19 +119,18 @@ export const buildYearlyTable = (
   maxed: PayrollResult,
   config: PayrollConfig,
   periodsPerYear: number,
-): YearlyResult => {
-  const initial = { cumulative: { cpp: 0, cpp2: 0, ei: 0 } as Cumulative, rows: [] as PayPeriodRow[] };
-
-  const { rows } = R.pipe(
+): YearlyResult =>
+  R.pipe(
     R.range(1, periodsPerYear + 1),
-    R.reduce((acc, period) => {
-      const { row, nextCumulative } = buildRow(period, active, maxed, acc.cumulative);
-      return { cumulative: nextCumulative, rows: [...acc.rows, row] };
-    }, initial),
+    R.reduce(
+      (acc, period) => {
+        const { row, nextCumulative } = buildRow(period, active, maxed, acc.cumulative);
+        return { cumulative: nextCumulative, rows: [...acc.rows, row] };
+      },
+      { cumulative: { cpp: 0, cpp2: 0, ei: 0 } as Cumulative, rows: [] as PayPeriodRow[] },
+    ),
+    ({ rows }) => ({ rows, totals: sumTotals(rows) }),
   );
-
-  return { rows, totals: sumTotals(rows) };
-};
 
 export const calculateYearly = async (
   service: PayrollService,
