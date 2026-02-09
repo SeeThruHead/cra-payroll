@@ -9,24 +9,25 @@ const annotate = (r: PayPeriodRow, first: PayPeriodRow): string => {
 
 interface Row {
   label: string;
-  gross: string;
-  fedTax: string;
-  provTax: string;
-  cpp: string;
-  cpp2: string;
-  ei: string;
-  netPay: string;
-  rrspEmp?: string;
-  takeHome?: string;
-  cumCppEi: string;
+  gross: number | string;
+  fedTax: number | string;
+  provTax: number | string;
+  cpp: number | string;
+  cpp2: number | string;
+  ei: number | string;
+  netPay: number | string;
+  rrspEmp?: number | string;
+  takeHome?: number | string;
+  cumCppEi: number | string;
   suffix?: string;
 }
 
-const renderRow = (r: Row): string =>
-  `${r.label} │ ${r.gross} │ ${r.fedTax} │ ${r.provTax} │ ${r.cpp} │ ${r.cpp2} │ ${r.ei} │ ${r.netPay}${r.rrspEmp !== undefined ? ` │ ${r.rrspEmp} │ ${r.takeHome}` : ""} │ ${r.cumCppEi}${r.suffix ?? ""}`;
+const renderRow = (r: Row): string => {
+  const c = (v: number | string, w: number) =>
+    typeof v === "number" ? money(v).padStart(w) : v.padStart(w);
 
-const m = (n: number, w: number) => money(n).padStart(w);
-const p = (s: string, w: number) => s.padStart(w);
+  return `${r.label} │ ${c(r.gross, 10)} │ ${c(r.fedTax, 10)} │ ${c(r.provTax, 10)} │ ${c(r.cpp, 10)} │ ${c(r.cpp2, 6)} │ ${c(r.ei, 10)} │ ${c(r.netPay, 10)}${r.rrspEmp !== undefined ? ` │ ${c(r.rrspEmp, 10)} │ ${c(r.takeHome!, 10)}` : ""} │ ${c(r.cumCppEi, 10)}${r.suffix ?? ""}`;
+};
 
 export const renderTable = (yearly: YearlyResult, periodsPerYear: number): string => {
   const { rows, totals } = yearly;
@@ -35,42 +36,42 @@ export const renderTable = (yearly: YearlyResult, periodsPerYear: number): strin
 
   const toRow = (r: PayPeriodRow): Row => ({
     label: ` ${String(r.period).padStart(3)} `,
-    gross: m(r.grossIncome, 10),
-    fedTax: m(r.federalTax, 10),
-    provTax: m(r.provincialTax, 10),
-    cpp: m(r.cpp, 10),
-    cpp2: m(r.cpp2, 6),
-    ei: m(r.ei, 10),
-    netPay: m(r.netPay, 10),
-    ...(hasRrsp ? { rrspEmp: m(r.rrspEmployee, 10), takeHome: m(r.netPay - r.rrspEmployee, 10) } : {}),
-    cumCppEi: m(r.cumulativeCpp + r.cumulativeCpp2 + r.cumulativeEi, 10),
+    gross: r.grossIncome,
+    fedTax: r.federalTax,
+    provTax: r.provincialTax,
+    cpp: r.cpp,
+    cpp2: r.cpp2,
+    ei: r.ei,
+    netPay: r.netPay,
+    ...(hasRrsp ? { rrspEmp: r.rrspEmployee, takeHome: r.netPay - r.rrspEmployee } : {}),
+    cumCppEi: r.cumulativeCpp + r.cumulativeCpp2 + r.cumulativeEi,
     suffix: annotate(r, rows[0]),
   });
 
   const header: Row = {
     label: "  #  ",
-    gross: p("Gross", 10),
-    fedTax: p("Fed Tax", 10),
-    provTax: p("Prov Tax", 10),
-    cpp: p("CPP", 10),
-    cpp2: p("CPP2", 6),
-    ei: p("EI", 10),
-    netPay: p("Net Pay", 10),
-    ...(hasRrsp ? { rrspEmp: p("RRSP Emp", 10), takeHome: p("Take Home", 10) } : {}),
-    cumCppEi: p("Cum CPP/EI", 10),
+    gross: "Gross",
+    fedTax: "Fed Tax",
+    provTax: "Prov Tax",
+    cpp: "CPP",
+    cpp2: "CPP2",
+    ei: "EI",
+    netPay: "Net Pay",
+    ...(hasRrsp ? { rrspEmp: "RRSP Emp", takeHome: "Take Home" } : {}),
+    cumCppEi: "Cum CPP/EI",
   };
 
   const totalsRow: Row = {
     label: " TOT ",
-    gross: m(totals.grossIncome, 10),
-    fedTax: m(totals.federalTax, 10),
-    provTax: m(totals.provincialTax, 10),
-    cpp: m(totals.cpp, 10),
-    cpp2: m(totals.cpp2, 6),
-    ei: m(totals.ei, 10),
-    netPay: m(totals.netPay, 10),
-    ...(hasRrsp ? { rrspEmp: m(totals.rrspEmployee, 10), takeHome: m(takeHome, 10) } : {}),
-    cumCppEi: p("", 10),
+    gross: totals.grossIncome,
+    fedTax: totals.federalTax,
+    provTax: totals.provincialTax,
+    cpp: totals.cpp,
+    cpp2: totals.cpp2,
+    ei: totals.ei,
+    netPay: totals.netPay,
+    ...(hasRrsp ? { rrspEmp: totals.rrspEmployee, takeHome } : {}),
+    cumCppEi: "",
   };
 
   const W = renderRow(header).length;
