@@ -103,10 +103,14 @@ function launchBrowser(headless: boolean): ResultAsync<Browser, string> {
     ])
   ).andThen((result) => {
     if (result === "__timeout__") {
-      // If launch resolves later, we can't close it — but at least we're not waiting
       return err(`Browser launch timed out (${LAUNCH_TIMEOUT / 1000}s)`);
     }
     return ok(result as Browser);
+  }).mapErr((e) => {
+    if (e.includes("Executable doesn't exist") || e.includes("browserType.launch")) {
+      return `Chromium not found. Install it with:\n\n  npx playwright install chromium\n\n(${e})`;
+    }
+    return e;
   });
 }
 
