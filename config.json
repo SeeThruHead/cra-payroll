@@ -1,0 +1,9 @@
+{
+  "province": "Ontario",
+  "annualSalary": 100000,
+  "payPeriod": "Semi-monthly (24 pay periods a year)",
+  "rrspEmployeePercent": 4,
+  "rrspEmployerPercent": 4,
+  "cppMaxedOut": false,
+  "eiMaxedOut": false
+}

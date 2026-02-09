@@ -1,0 +1,4 @@
+node_modules/
+cra-payroll
+bun.lock
+.playwright-cli/
