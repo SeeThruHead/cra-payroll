@@ -1,31 +1,23 @@
-import { money, line } from "./format";
+import { money, line, when } from "./format";
 import type { PayrollResult } from "../types";
 
-export const renderSingleResult = (r: PayrollResult): string => {
-  const W = 42;
-  const f = (n: number) => money(n).padStart(10);
-  const lines = [
-    "Results (per pay period)",
-    line("═", W),
-    `  Gross Income:       $${f(r.grossIncome)}`,
-  ];
+const f = (n: number) => money(n).padStart(10);
+const W = 42;
 
-  if (r.rrspEmployee > 0) lines.push(`  RRSP (Employee):   -$${f(r.rrspEmployee)}`);
-  if (r.rrspEmployer > 0) lines.push(`  RRSP (Employer):   -$${f(r.rrspEmployer)}`);
-
-  lines.push(line("─", W));
-  lines.push(`  Federal Tax:       -$${f(r.federalTax)}`);
-  lines.push(`  Provincial Tax:    -$${f(r.provincialTax)}`);
-  lines.push(`  CPP:               -$${f(r.cpp)}`);
-  if (r.cpp2 > 0) lines.push(`  CPP2:              -$${f(r.cpp2)}`);
-  lines.push(`  EI:                -$${f(r.ei)}`);
-  lines.push(line("─", W));
-  lines.push(`  Total Deductions:  -$${f(r.totalDeductions)}`);
-  lines.push(line("═", W));
-  lines.push(`  Net Pay:             $${f(r.net)}`);
-  if (r.rrspEmployee > 0) {
-    lines.push(`     (after RRSP):     $${f(r.net - r.rrspEmployee)}`);
-  }
-
-  return lines.join("\n");
-};
+export const renderSingleResult = (r: PayrollResult): string =>
+`Results (per pay period)
+${line("═", W)}
+  Gross Income:       $${f(r.grossIncome)}${
+  when(r.rrspEmployee, `  RRSP (Employee):   -$${f(r.rrspEmployee)}`)}${
+  when(r.rrspEmployer, `  RRSP (Employer):   -$${f(r.rrspEmployer)}`)}
+${line("─", W)}
+  Federal Tax:       -$${f(r.federalTax)}
+  Provincial Tax:    -$${f(r.provincialTax)}
+  CPP:               -$${f(r.cpp)}${
+  when(r.cpp2, `  CPP2:              -$${f(r.cpp2)}`)}
+  EI:                -$${f(r.ei)}
+${line("─", W)}
+  Total Deductions:  -$${f(r.totalDeductions)}
+${line("═", W)}
+  Net Pay:             $${f(r.net)}${
+  when(r.rrspEmployee, `     (after RRSP):     $${f(r.net - r.rrspEmployee)}`)}`;
