@@ -5,6 +5,7 @@ import { existsSync, readFileSync, fstatSync } from "fs";
 import { createInterface } from "readline";
 import { calculatePayroll, setVerbose, type PayrollConfig } from "./calculator";
 import { calculateYearly, PAY_PERIOD_COUNTS, type YearlyResult } from "./yearly";
+import { checkForUpdate, selfUpdate, currentVersion } from "./updater";
 
 const PROVINCES = [
   "Alberta",
@@ -46,6 +47,8 @@ const { values } = parseArgs({
     table: { type: "boolean", short: "t", default: false },
     annual: { type: "boolean", short: "a", default: false },
     monthly: { type: "boolean", short: "m", default: false },
+    update: { type: "boolean", default: false },
+    version: { type: "boolean", default: false },
     headless: { type: "boolean", default: false },
     verbose: { type: "boolean", short: "v", default: false },
     help: { type: "boolean", short: "h", default: false },
@@ -75,6 +78,8 @@ if (values.help) {
     -a, --annual              Show annualized totals
     -m, --monthly             Show monthly averages
     --headless                Run browser headless (may be blocked by CRA)
+    --update                  Self-update to the latest release
+    --version                 Show current version
     -v, --verbose             Verbose logging (useful for debugging)
     -h, --help                Show this help
 
@@ -93,6 +98,21 @@ if (values.help) {
   one at ./config.json or ~/.cra-payroll.json. CLI args always win.
   Missing required values will be prompted interactively.
 `);
+  process.exit(0);
+}
+
+if (values.version) {
+  console.log(`cra-payroll v${currentVersion()}`);
+  process.exit(0);
+}
+
+if (values.update) {
+  const result = await selfUpdate();
+  if (result.isErr()) {
+    console.error(`❌ ${result.error}`);
+    process.exit(1);
+  }
+  console.log(result.value);
   process.exit(0);
 }
 
@@ -449,4 +469,11 @@ if (wantTable || wantAnnual || wantMonthly) {
   console.log(`  💰 Net Pay:          $${fmt(result.netAmount).padStart(10)}`);
   if (result.rrspEmployee > 0)
     console.log(`     (after RRSP):     $${fmt(result.netAmount - result.rrspEmployee).padStart(10)}`);
+}
+
+// ── Background update check (non-blocking) ──────────────────
+const updateInfo = await checkForUpdate();
+if (updateInfo.isOk() && updateInfo.value) {
+  console.log(`\n💡 Update available: ${updateInfo.value.tag} (current: v${currentVersion()})`);
+  console.log(`   Run 'cra-payroll --update' to install it.`);
 }

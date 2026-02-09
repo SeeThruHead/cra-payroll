@@ -27,6 +27,12 @@ sudo mv cra-payroll /usr/local/bin/
 
 > **Requires Google Chrome** — uses your system Chrome, no extra browser install needed.
 
+Or use the one-liner:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SeeThruHead/cra-payroll/main/install.sh | bash
+```
+
 ## Usage
 
 ```bash
@@ -50,6 +56,12 @@ cra-payroll --salary 263000 --table --annual --monthly
 
 # Verbose logging
 cra-payroll -v --salary 100000
+
+# Check version
+cra-payroll --version
+
+# Self-update to latest release
+cra-payroll --update
 ```
 
 ### Example output (`--table`)
@@ -102,6 +114,8 @@ CLI args override config file values. Missing values are prompted interactively.
 | Annual totals | `-a`, `--annual` | — | `false` |
 | Monthly averages | `-m`, `--monthly` | — | `false` |
 | Verbose | `-v`, `--verbose` | — | `false` |
+| Self-update | `--update` | — | — |
+| Show version | `--version` | — | — |
 | Headless | `--headless` | — | `false` |
 | Config path | `-c`, `--config` | — | — |
 
