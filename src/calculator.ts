@@ -96,7 +96,7 @@ function launchBrowser(headless: boolean): ResultAsync<Browser, string> {
 
   return ResultAsync.fromSafePromise<Browser | "__timeout__", never>(
     Promise.race([
-      chromium.launch({ headless }).then((b) => { launched = true; clearTimeout(timer); return b; }),
+      chromium.launch({ headless, channel: "chrome" }).then((b) => { launched = true; clearTimeout(timer); return b; }),
       new Promise<"__timeout__">((resolve) => {
         timer = setTimeout(() => resolve("__timeout__"), LAUNCH_TIMEOUT);
       }),
@@ -107,8 +107,8 @@ function launchBrowser(headless: boolean): ResultAsync<Browser, string> {
     }
     return ok(result as Browser);
   }).mapErr((e) => {
-    if (e.includes("Executable doesn't exist") || e.includes("browserType.launch")) {
-      return `Chromium not found. Install it with:\n\n  npx playwright install chromium\n\n(${e})`;
+    if (e.includes("Executable doesn't exist") || e.includes("browserType.launch") || e.includes("Cannot find")) {
+      return `Chrome not found. Install Google Chrome from https://www.google.com/chrome/\n\n(${e})`;
     }
     return e;
   });

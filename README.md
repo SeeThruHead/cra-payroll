@@ -18,11 +18,14 @@ Grab the latest binary for your platform from [**Releases**](https://github.com/
 # Example: macOS Apple Silicon
 curl -L -o cra-payroll https://github.com/SeeThruHead/cra-payroll/releases/latest/download/cra-payroll-darwin-arm64
 chmod +x cra-payroll
-sudo mv cra-payroll /usr/local/bin/
 
-# Install Chromium (required)
-npx playwright install chromium
+# Remove macOS quarantine flag (unsigned binary)
+xattr -d com.apple.quarantine cra-payroll
+
+sudo mv cra-payroll /usr/local/bin/
 ```
+
+> **Requires Google Chrome** — uses your system Chrome, no extra browser install needed.
 
 ## Usage
 
@@ -113,9 +116,8 @@ CLI args override config file values. Missing values are prompted interactively.
 ## Local Development
 
 ```bash
-# Requires Bun (https://bun.sh)
+# Requires Bun (https://bun.sh) and Google Chrome
 bun install
-npx playwright install chromium
 
 # Run directly
 bun run dev -- --salary 100000
@@ -129,7 +131,7 @@ bun test --max-concurrency 1
 
 ## How it works
 
-1. Launches Chromium via Playwright (headed by default — CRA blocks headless)
+1. Launches your system Chrome via Playwright (headed by default — CRA blocks headless)
 2. Fills out the PDOC wizard: province, pay period, salary, RRSP contributions
 3. Sets CPP/EI status and hits Calculate
 4. Scrapes the results page for taxes, deductions, and net pay
