@@ -1,23 +1,13 @@
 import { ok, err, type Result } from "neverthrow";
-import { calculatePayroll, type PayrollConfig, type PayrollResult } from "./calculator";
+import { PAY_PERIODS, type PayrollConfig, type PayrollResult, type PayrollService } from "./types";
 
 // 2026 CPP/EI maximums
 export const CPP_MAX_BASE = 4_230.45;
 export const CPP2_MAX = 416.00;
 export const EI_MAX = 1_123.07;
 
-export const PAY_PERIOD_COUNTS: Record<string, number> = {
-  "Daily (240 pay periods a year)": 240,
-  "Weekly (52 pay periods a year)": 52,
-  "Biweekly (26 pay periods a year)": 26,
-  "Semi-monthly (24 pay periods a year)": 24,
-  "Monthly (12 pay periods a year)": 12,
-  "(10 pay periods a year)": 10,
-  "(13 pay periods a year)": 13,
-  "(22 pay periods a year)": 22,
-  "Weekly (53 pay periods a year)": 53,
-  "Biweekly (27 pay periods a year)": 27,
-};
+// Re-export for CLI
+export { PAY_PERIODS as PAY_PERIOD_COUNTS } from "./types";
 
 export interface PayPeriodRow {
   period: number;
@@ -52,29 +42,13 @@ export interface YearlyResult {
   };
 }
 
-export async function calculateYearly(
+/** Build a yearly table from two payroll results (active CPP/EI vs maxed) */
+export function buildYearlyTable(
+  active: PayrollResult,
+  maxed: PayrollResult,
   config: PayrollConfig,
-  headless: boolean = false
-): Promise<Result<YearlyResult, string>> {
-  const periodsPerYear = PAY_PERIOD_COUNTS[config.payPeriod];
-  if (!periodsPerYear) return err(`Unknown pay period: "${config.payPeriod}"`);
-
-  // Run CRA twice: once with CPP/EI active, once with them maxed out
-  const activeConfig = { ...config, cppMaxedOut: false, eiMaxedOut: false };
-  const maxedConfig = { ...config, cppMaxedOut: true, eiMaxedOut: true };
-
-  const [activeResult, maxedResult] = await Promise.all([
-    calculatePayroll(activeConfig, headless),
-    calculatePayroll(maxedConfig, headless),
-  ]);
-
-  if (activeResult.isErr()) return err(`CPP/EI active run: ${activeResult.error}`);
-  if (maxedResult.isErr()) return err(`CPP/EI maxed run: ${maxedResult.error}`);
-
-  const active = activeResult.value;
-  const maxed = maxedResult.value;
-
-  // Build per-period table
+  periodsPerYear: number
+): YearlyResult {
   const rows: PayPeriodRow[] = [];
   let cumCpp = 0;
   let cumCpp2 = 0;
@@ -86,8 +60,6 @@ export async function calculateYearly(
     const eiMaxed = cumEi >= EI_MAX;
     const allMaxed = cppMaxed && cpp2Maxed && eiMaxed;
 
-    // Use the maxed result when all are maxed, otherwise use active
-    // For partial periods (when one maxes mid-period), calculate the remainder
     let cpp = 0;
     let cpp2 = 0;
     let ei = 0;
@@ -107,8 +79,6 @@ export async function calculateYearly(
       ei = Math.min(active.eiDeductions, remaining);
     }
 
-    // Taxes: use maxed rates when CPP/EI are all done, active rates otherwise
-    // In reality taxes shift slightly when CPP/EI stop, CRA accounts for this
     const federalTax = allMaxed ? maxed.federalTax : active.federalTax;
     const provincialTax = allMaxed ? maxed.provincialTax : active.provincialTax;
 
@@ -119,7 +89,6 @@ export async function calculateYearly(
     cumCpp2 += cpp2;
     cumEi += ei;
 
-    // Round to avoid floating point drift
     cumCpp = Math.round(cumCpp * 100) / 100;
     cumCpp2 = Math.round(cumCpp2 * 100) / 100;
     cumEi = Math.round(cumEi * 100) / 100;
@@ -158,10 +127,32 @@ export async function calculateYearly(
     { grossIncome: 0, rrspEmployee: 0, rrspEmployer: 0, federalTax: 0, provincialTax: 0, cpp: 0, cpp2: 0, ei: 0, totalDeductions: 0, netPay: 0 }
   );
 
-  // Round totals
   for (const key of Object.keys(totals) as (keyof typeof totals)[]) {
     totals[key] = Math.round(totals[key] * 100) / 100;
   }
 
-  return ok({ rows, totals });
+  return { rows, totals };
+}
+
+/** Run two CRA calculations and build the yearly table */
+export async function calculateYearly(
+  service: PayrollService,
+  config: PayrollConfig,
+  headless: boolean = false
+): Promise<Result<YearlyResult, string>> {
+  const periodsPerYear = PAY_PERIODS[config.payPeriod];
+  if (!periodsPerYear) return err(`Unknown pay period: "${config.payPeriod}"`);
+
+  const activeConfig = { ...config, cppMaxedOut: false, eiMaxedOut: false };
+  const maxedConfig = { ...config, cppMaxedOut: true, eiMaxedOut: true };
+
+  const [activeResult, maxedResult] = await Promise.all([
+    service.calculate(activeConfig, headless),
+    service.calculate(maxedConfig, headless),
+  ]);
+
+  if (activeResult.isErr()) return err(`CPP/EI active run: ${activeResult.error}`);
+  if (maxedResult.isErr()) return err(`CPP/EI maxed run: ${maxedResult.error}`);
+
+  return ok(buildYearlyTable(activeResult.value, maxedResult.value, config, periodsPerYear));
 }

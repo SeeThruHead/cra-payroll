@@ -3,7 +3,7 @@ import { parseArgs } from "util";
 import { resolve } from "path";
 import { existsSync, readFileSync, fstatSync } from "fs";
 import { createInterface } from "readline";
-import { calculatePayroll, setVerbose, type PayrollConfig } from "./calculator";
+import { calculatePayroll, setVerbose, craService, type PayrollConfig } from "./calculator";
 import { calculateYearly, PAY_PERIOD_COUNTS, type YearlyResult } from "./yearly";
 import { checkForUpdate, selfUpdate, currentVersion } from "./updater";
 
@@ -330,7 +330,7 @@ console.log("⏳ Calculating via CRA PDOC...\n");
 
 if (wantTable || wantAnnual || wantMonthly) {
   // Yearly mode: run 2 CRA calculations and build the table
-  const yearlyResult = await calculateYearly(config, headless);
+  const yearlyResult = await calculateYearly(craService, config, headless);
   if (yearlyResult.isErr()) {
     console.error(`❌ Error: ${yearlyResult.error}`);
     process.exit(1);

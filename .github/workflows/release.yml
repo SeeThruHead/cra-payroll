@@ -39,7 +39,6 @@ jobs:
           bun build --compile src/cli.ts \
             --target ${{ matrix.target }} \
             --outfile ${{ matrix.artifact }} \
-            --external chromium-bidi \
             --external electron
 
       - uses: actions/upload-artifact@v4
