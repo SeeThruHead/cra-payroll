@@ -124,17 +124,14 @@ if (values.update) {
 
 const rl = createInterface({ input: process.stdin, output: process.stderr });
 
-function prompt(question: string): Promise<string> {
-  return new Promise((res) => {
+const prompt = (question: string): Promise<string> =>
+  new Promise((res) => {
     rl.question(question, (answer) => res(answer.trim()));
   });
-}
 
-function closePrompt() {
-  rl.close();
-}
+const closePrompt = () => rl.close();
 
-async function promptChoice(label: string, choices: string[], defaultVal?: string): Promise<string> {
+const promptChoice = async (label: string, choices: string[], defaultVal?: string): Promise<string> => {
   console.error(`\n${label}`);
   choices.forEach((c, i) => console.error(`  ${i + 1}) ${c}`));
   const defHint = defaultVal ? ` [default: ${defaultVal}]` : "";
@@ -147,9 +144,9 @@ async function promptChoice(label: string, choices: string[], defaultVal?: strin
   if (defaultVal) return defaultVal;
   console.error("Invalid choice, please try again.");
   return promptChoice(label, choices, defaultVal);
-}
+};
 
-async function promptNumber(label: string, defaultVal?: number): Promise<number> {
+const promptNumber = async (label: string, defaultVal?: number): Promise<number> => {
   const defHint = defaultVal !== undefined ? ` [default: ${defaultVal}]` : "";
   const answer = await prompt(`${label}${defHint}: `);
   if (!answer && defaultVal !== undefined) return defaultVal;
@@ -159,14 +156,14 @@ async function promptNumber(label: string, defaultVal?: number): Promise<number>
     return promptNumber(label, defaultVal);
   }
   return num;
-}
+};
 
-async function promptYesNo(label: string, defaultVal: boolean = false): Promise<boolean> {
+const promptYesNo = async (label: string, defaultVal: boolean = false): Promise<boolean> => {
   const defHint = defaultVal ? " [Y/n]" : " [y/N]";
   const answer = await prompt(`${label}${defHint}: `);
   if (!answer) return defaultVal;
   return answer.toLowerCase().startsWith("y");
-}
+};
 
 // ── Load config: piped stdin → --config → ./config.json → ~/.cra-payroll.json ──
 
@@ -224,19 +221,19 @@ if (Object.keys(fileConfig).length === 0) {
 
 import { ok, err, type Result } from "neverthrow";
 
-async function resolveField<T>(
+const resolveField = async <T>(
   label: string,
   cliVal: T | undefined,
   fileVal: T | undefined,
   defaultVal: T | undefined,
   promptFn: (() => Promise<T>) | null
-): Promise<Result<T, string>> {
+): Promise<Result<T, string>> => {
   if (cliVal !== undefined) return ok(cliVal);
   if (fileVal !== undefined) return ok(fileVal);
   if (promptFn && !isPiped) return ok(await promptFn());
   if (defaultVal !== undefined) return ok(defaultVal);
   return err(`${label} is required (pass via config or --${label})`);
-}
+};
 
 const provinceResult = await resolveField(
   "province",

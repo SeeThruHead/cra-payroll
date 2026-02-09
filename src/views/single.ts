@@ -1,7 +1,7 @@
 import { money, line } from "./format";
 import type { PayrollResult } from "../types";
 
-export function renderSingleResult(r: PayrollResult): string {
+export const renderSingleResult = (r: PayrollResult): string => {
   const W = 42;
   const f = (n: number) => money(n).padStart(10);
   const lines = [
@@ -28,4 +28,4 @@ export function renderSingleResult(r: PayrollResult): string {
   }
 
   return lines.join("\n");
-}
+};

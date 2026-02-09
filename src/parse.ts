@@ -17,14 +17,14 @@ const PATTERNS: Record<string, RegExp> = {
   netAmount:       /Net amount\s+([\d,]+\.\d{2})/,
 };
 
-function extractField(text: string, pattern: RegExp): number | null {
+const extractField = (text: string, pattern: RegExp): number | null => {
   const match = text.match(pattern);
   if (!match) return null;
   return parseFloat(match[1].replace(/,/g, ""));
-}
+};
 
-function extractAll(text: string): { values: Record<string, number>; missing: string[] } {
-  return R.pipe(
+const extractAll = (text: string): { values: Record<string, number>; missing: string[] } =>
+  R.pipe(
     R.entries(PATTERNS),
     R.reduce(
       (acc, [key, pattern]) => {
@@ -37,9 +37,8 @@ function extractAll(text: string): { values: Record<string, number>; missing: st
       { values: {} as Record<string, number>, missing: [] as string[] }
     ),
   );
-}
 
-function computeRrsp(config: PayrollConfig, periodsPerYear: number) {
+const computeRrsp = (config: PayrollConfig, periodsPerYear: number) => {
   const employee = R.pipe(
     config.annualSalary * (config.rrspEmployeePercent / 100) / periodsPerYear,
     n => Math.round(n * 100) / 100,
@@ -49,13 +48,13 @@ function computeRrsp(config: PayrollConfig, periodsPerYear: number) {
     n => Math.round(n * 100) / 100,
   );
   return { employee, employer };
-}
+};
 
-export function parseResults(
+export const parseResults = (
   text: string,
   config: PayrollConfig,
   periodsPerYear: number,
-): Result<PayrollResult, string> {
+): Result<PayrollResult, string> => {
   const { values, missing } = extractAll(text);
 
   if ((values.grossIncome ?? 0) === 0 && config.annualSalary > 0) {
@@ -76,4 +75,4 @@ export function parseResults(
     rrspEmployee:    rrsp.employee,
     rrspEmployer:    rrsp.employer,
   });
-}
+};

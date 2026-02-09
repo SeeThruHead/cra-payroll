@@ -1,7 +1,7 @@
 import { money, line } from "./format";
 import type { PayrollConfig } from "../types";
 
-export function renderConfig(config: PayrollConfig, showCppEi: boolean): string {
+export const renderConfig = (config: PayrollConfig, showCppEi: boolean): string => {
   const lines = [
     "",
     "CRA Payroll Deductions Calculator",
@@ -22,4 +22,4 @@ export function renderConfig(config: PayrollConfig, showCppEi: boolean): string 
   lines.push("Calculating via CRA PDOC...\n");
 
   return lines.join("\n");
-}
+};

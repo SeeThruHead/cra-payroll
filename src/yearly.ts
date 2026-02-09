@@ -59,12 +59,12 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 const clampToRemaining = (perPeriod: number, cumulative: number, max: number): number =>
   cumulative >= max ? 0 : Math.min(perPeriod, max - cumulative);
 
-function buildRow(
+const buildRow = (
   period: number,
   active: PayrollResult,
   maxed: PayrollResult,
   acc: Accumulator,
-): { row: PayPeriodRow; nextAcc: Accumulator } {
+): { row: PayPeriodRow; nextAcc: Accumulator } => {
   const cpp = clampToRemaining(active.cppDeductions, acc.cumCpp, CPP_MAX_BASE);
   const cpp2 = clampToRemaining(active.cpp2Deductions, acc.cumCpp2, CPP2_MAX);
   const ei = clampToRemaining(active.eiDeductions, acc.cumEi, EI_MAX);
@@ -101,30 +101,30 @@ function buildRow(
   };
 
   return { row, nextAcc: { ...nextAcc, rows: [...acc.rows, row] } };
-}
+};
 
-function sumTotals(rows: PayPeriodRow[]): YearlyResult["totals"] {
+const sumTotals = (rows: PayPeriodRow[]): YearlyResult["totals"] => {
   const sum = (fn: (r: PayPeriodRow) => number) => round2(R.sumBy(rows, fn));
   return {
-    grossIncome:  sum(r => r.grossIncome),
-    rrspEmployee: sum(r => r.rrspEmployee),
-    rrspEmployer: sum(r => r.rrspEmployer),
-    federalTax:   sum(r => r.federalTax),
-    provincialTax: sum(r => r.provincialTax),
-    cpp:          sum(r => r.cpp),
-    cpp2:         sum(r => r.cpp2),
-    ei:           sum(r => r.ei),
+    grossIncome:    sum(r => r.grossIncome),
+    rrspEmployee:   sum(r => r.rrspEmployee),
+    rrspEmployer:   sum(r => r.rrspEmployer),
+    federalTax:     sum(r => r.federalTax),
+    provincialTax:  sum(r => r.provincialTax),
+    cpp:            sum(r => r.cpp),
+    cpp2:           sum(r => r.cpp2),
+    ei:             sum(r => r.ei),
     totalDeductions: sum(r => r.totalDeductions),
-    netPay:       sum(r => r.netPay),
+    netPay:         sum(r => r.netPay),
   };
-}
+};
 
-export function buildYearlyTable(
+export const buildYearlyTable = (
   active: PayrollResult,
   maxed: PayrollResult,
   config: PayrollConfig,
   periodsPerYear: number,
-): YearlyResult {
+): YearlyResult => {
   const initial: Accumulator = { cumCpp: 0, cumCpp2: 0, cumEi: 0, rows: [] };
 
   const { rows } = R.pipe(
@@ -136,13 +136,13 @@ export function buildYearlyTable(
   );
 
   return { rows, totals: sumTotals(rows) };
-}
+};
 
-export async function calculateYearly(
+export const calculateYearly = async (
   service: PayrollService,
   config: PayrollConfig,
   headless: boolean = false,
-): Promise<Result<YearlyResult, string>> {
+): Promise<Result<YearlyResult, string>> => {
   const periodsPerYear = PAY_PERIODS[config.payPeriod];
   if (!periodsPerYear) return err(`Unknown pay period: "${config.payPeriod}"`);
 
@@ -155,4 +155,4 @@ export async function calculateYearly(
   if (maxedResult.isErr()) return err(`CPP/EI maxed run: ${maxedResult.error}`);
 
   return ok(buildYearlyTable(activeResult.value, maxedResult.value, config, periodsPerYear));
-}
+};

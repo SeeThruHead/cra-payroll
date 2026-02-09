@@ -1,10 +1,9 @@
 /**
  * CRA PDOC wizard automation.
- * Each step is a pure function: (session, config) → Result.
+ * Each step is a function: (session, config) → Result.
  * Reads like a script — no DOM noise.
  */
 import { ok, err, type Result } from "neverthrow";
-import { pipe } from "remeda";
 import { type BrowserSession, launchSession, retry, log } from "./browser";
 import { PAY_PERIODS, type PayrollConfig, type PayrollResult } from "./types";
 import { parseResults } from "./parse";
@@ -13,8 +12,8 @@ const CRA_URL = "https://apps.cra-arc.gc.ca/ebci/rhpd/beta/entry";
 
 // ── Step runners ────────────────────────────────────────────
 
-async function loadEntryPage(session: BrowserSession): Promise<Result<void, string>> {
-  return retry(
+const loadEntryPage = async (session: BrowserSession): Promise<Result<void, string>> =>
+  retry(
     async () => {
       const nav = await session.goto(CRA_URL);
       if (nav.isErr()) return nav;
@@ -22,18 +21,17 @@ async function loadEntryPage(session: BrowserSession): Promise<Result<void, stri
     },
     3, 1000, "entry page"
   );
-}
 
-async function advancePastEntry(session: BrowserSession): Promise<Result<void, string>> {
+const advancePastEntry = async (session: BrowserSession): Promise<Result<void, string>> => {
   const click = await session.clickButton("Next");
   if (click.isErr()) return click;
   return session.waitForUrl("step1");
-}
+};
 
-async function fillEmployeeInfo(
+const fillEmployeeInfo = async (
   session: BrowserSession,
   config: PayrollConfig
-): Promise<Result<void, string>> {
+): Promise<Result<void, string>> => {
   log("filling step 1...");
 
   const province = await session.selectByLabel("Province", config.province);
@@ -59,15 +57,15 @@ async function fillEmployeeInfo(
   const next = await session.clickButton("Next");
   if (next.isErr()) return next;
   return session.waitForUrl("step2");
-}
+};
 
-async function fillSalaryInfo(
+const fillSalaryInfo = async (
   session: BrowserSession,
   config: PayrollConfig,
   salaryPerPeriod: string,
   rrspEmployerPerPeriod: string,
   rrspEmployeePerPeriod: string
-): Promise<Result<void, string>> {
+): Promise<Result<void, string>> => {
   log("filling step 2...");
 
   const salary = await session.fillInputByLabel("Salary or wages", salaryPerPeriod);
@@ -97,12 +95,12 @@ async function fillSalaryInfo(
   const next = await session.clickButton("Next");
   if (next.isErr()) return next;
   return session.waitForUrl("step3");
-}
+};
 
-async function fillCppEi(
+const fillCppEi = async (
   session: BrowserSession,
   config: PayrollConfig
-): Promise<Result<void, string>> {
+): Promise<Result<void, string>> => {
   log("filling step 3...");
 
   if (config.cppMaxedOut) {
@@ -120,9 +118,9 @@ async function fillCppEi(
   const calc = await session.clickButton("Calculate");
   if (calc.isErr()) return calc;
   return session.waitForUrl("results");
-}
+};
 
-async function readResults(session: BrowserSession): Promise<Result<string, string>> {
+const readResults = async (session: BrowserSession): Promise<Result<string, string>> => {
   log("waiting for results...");
 
   const ready = await retry(
@@ -137,14 +135,14 @@ async function readResults(session: BrowserSession): Promise<Result<string, stri
   }
 
   return session.readMainText();
-}
+};
 
 // ── Orchestrator ────────────────────────────────────────────
 
-export async function calculatePayroll(
+export const calculatePayroll = async (
   config: PayrollConfig,
   headless: boolean = false
-): Promise<Result<PayrollResult, string>> {
+): Promise<Result<PayrollResult, string>> => {
   const periodsPerYear = PAY_PERIODS[config.payPeriod];
   if (!periodsPerYear) return err(`Unknown pay period: "${config.payPeriod}"`);
 
@@ -194,4 +192,4 @@ export async function calculatePayroll(
   await session.close();
 
   return parsed;
-}
+};

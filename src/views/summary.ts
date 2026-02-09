@@ -1,11 +1,11 @@
 import { money, line } from "./format";
 import type { YearlyResult } from "../yearly";
 
-function renderBreakdown(
+const renderBreakdown = (
   label: string,
   totals: YearlyResult["totals"],
   divisor: number = 1,
-): string {
+): string => {
   const W = 42;
   const f = (n: number) => money(n / divisor).padStart(10);
   const lines = [
@@ -36,12 +36,10 @@ function renderBreakdown(
   }
 
   return lines.join("\n");
-}
+};
 
-export function renderAnnual(totals: YearlyResult["totals"]): string {
-  return renderBreakdown("Annual Totals", totals);
-}
+export const renderAnnual = (totals: YearlyResult["totals"]): string =>
+  renderBreakdown("Annual Totals", totals);
 
-export function renderMonthly(totals: YearlyResult["totals"]): string {
-  return renderBreakdown("Monthly Averages", totals, 12);
-}
+export const renderMonthly = (totals: YearlyResult["totals"]): string =>
+  renderBreakdown("Monthly Averages", totals, 12);

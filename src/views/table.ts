@@ -8,7 +8,7 @@ interface Column {
   total: (t: YearlyResult["totals"], takeHome: number) => number | null;
 }
 
-function buildColumns(hasRrsp: boolean): Column[] {
+const buildColumns = (hasRrsp: boolean): Column[] => {
   const cols: Column[] = [
     { label: "Gross",    row: r => r.grossIncome,   total: t => t.grossIncome },
     { label: "Fed Tax",  row: r => r.federalTax,    total: t => t.federalTax },
@@ -21,8 +21,8 @@ function buildColumns(hasRrsp: boolean): Column[] {
 
   if (hasRrsp) {
     cols.push(
-      { label: "RRSP Emp",  row: r => r.rrspEmployee,                total: t => t.rrspEmployee },
-      { label: "Take Home", row: r => r.netPay - r.rrspEmployee,     total: (t, th) => th },
+      { label: "RRSP Emp",  row: r => r.rrspEmployee,            total: t => t.rrspEmployee },
+      { label: "Take Home", row: r => r.netPay - r.rrspEmployee, total: (t, th) => th },
     );
   }
 
@@ -33,20 +33,20 @@ function buildColumns(hasRrsp: boolean): Column[] {
   });
 
   return cols;
-}
+};
 
-function colWidth(col: Column, totals: YearlyResult["totals"], takeHome: number): number {
+const colWidth = (col: Column, totals: YearlyResult["totals"], takeHome: number): number => {
   const totalVal = col.total(totals, takeHome);
   return Math.max(col.label.length, totalVal !== null ? money(totalVal).length : 0);
-}
+};
 
-function annotateRow(r: PayPeriodRow, firstRow: PayPeriodRow): string {
+const annotateRow = (r: PayPeriodRow, firstRow: PayPeriodRow): string => {
   if (r.cpp === 0 && r.cpp2 === 0 && r.ei === 0) return " ✓ maxed";
   if (r.cpp < firstRow.cpp || r.ei < firstRow.ei) return " ← partial";
   return "";
-}
+};
 
-export function renderTable(yearly: YearlyResult, periodsPerYear: number): string {
+export const renderTable = (yearly: YearlyResult, periodsPerYear: number): string => {
   const { rows, totals } = yearly;
   const hasRrsp = totals.rrspEmployee > 0 || totals.rrspEmployer > 0;
   const takeHome = totals.netPay - totals.rrspEmployee;
@@ -73,7 +73,6 @@ export function renderTable(yearly: YearlyResult, periodsPerYear: number): strin
       ` ${String(r.period).padStart(3)} `,
       ...R.map(R.zip(columns, widths), ([col, w]) => fmtCol(col.row(r), w)),
     ];
-    // Add annotation to last cell
     const annotation = annotateRow(r, rows[0]);
     const lastIdx = cells.length - 1;
     cells[lastIdx] += annotation;
@@ -99,4 +98,4 @@ export function renderTable(yearly: YearlyResult, periodsPerYear: number): strin
   }
 
   return lines.join("\n");
-}
+};
