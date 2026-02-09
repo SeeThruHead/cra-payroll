@@ -341,21 +341,52 @@ if (wantTable || wantAnnual || wantMonthly) {
   if (wantTable) {
     // Header
     const hasRrsp = totals.rrspEmployee > 0 || totals.rrspEmployer > 0;
+    const takeHomeTotal = totals.netPay - totals.rrspEmployee;
+
+    // Calculate column widths from the widest value (totals row)
+    const col = (label: string, ...vals: number[]) => {
+      const maxVal = Math.max(label.length, ...vals.map(v => fmt(v).length));
+      return maxVal;
+    };
+
+    const C = {
+      gross:    col("Gross",     totals.grossIncome),
+      fedTax:   col("Fed Tax",   totals.federalTax),
+      provTax:  col("Prov Tax",  totals.provincialTax),
+      cpp:      col("CPP",       totals.cpp),
+      cpp2:     col("CPP2",      totals.cpp2),
+      ei:       col("EI",        totals.ei),
+      netPay:   col("Net Pay",   totals.netPay),
+      rrsp:     col("RRSP Emp",  totals.rrspEmployee),
+      takeHome: col("Take Home", takeHomeTotal),
+      cumCppEi: col("Cum CPP/EI", totals.cpp + totals.ei),
+    };
+
+    const pad = (v: string, w: number) => v.padStart(w);
+    const fmtCol = (n: number, w: number) => pad(fmt(n), w);
+
     console.log("📊 Per-Paycheck Table (2026)");
-    const W = hasRrsp ? 142 : 120;
+
+    let headers = [
+      "  #  ",
+      pad("Gross", C.gross),
+      pad("Fed Tax", C.fedTax),
+      pad("Prov Tax", C.provTax),
+      pad("CPP", C.cpp),
+      pad("CPP2", C.cpp2),
+      pad("EI", C.ei),
+      pad("Net Pay", C.netPay),
+    ];
+    if (hasRrsp) {
+      headers.push(pad("RRSP Emp", C.rrsp));
+      headers.push(pad("Take Home", C.takeHome));
+    }
+    headers.push(pad("Cum CPP/EI", C.cumCppEi));
+
+    const headerLine = headers.join(" │ ");
+    const W = headerLine.length;
     console.log("═".repeat(W));
-    let header =
-      "  #  │" +
-      "     Gross │" +
-      "   Fed Tax │" +
-      "  Prov Tax │" +
-      "       CPP │" +
-      "      CPP2 │" +
-      "        EI │" +
-      "   Net Pay │";
-    if (hasRrsp) header += "  RRSP Emp │ Take Home │";
-    header += " Cum CPP/EI";
-    console.log(header);
+    console.log(headerLine);
     console.log("─".repeat(W));
 
     for (const r of rows) {
@@ -365,33 +396,41 @@ if (wantTable || wantAnnual || wantMonthly) {
         (r.cpp === 0 && r.cpp2 === 0 && r.ei === 0) ? " ✓ maxed" :
         (r.cpp < rows[0].cpp || r.ei < rows[0].ei) ? " ← partial" : "";
 
-      let line =
-        ` ${String(r.period).padStart(3)} │` +
-        ` ${fmt(r.grossIncome).padStart(9)} │` +
-        ` ${fmt(r.federalTax).padStart(9)} │` +
-        ` ${fmt(r.provincialTax).padStart(9)} │` +
-        ` ${fmt(r.cpp).padStart(9)} │` +
-        ` ${fmt(r.cpp2).padStart(9)} │` +
-        ` ${fmt(r.ei).padStart(9)} │` +
-        ` ${fmt(r.netPay).padStart(9)} │`;
-      if (hasRrsp) line += ` ${fmt(r.rrspEmployee).padStart(9)} │ ${fmt(takeHome).padStart(9)} │`;
-      line += ` ${fmt(cumTotal).padStart(9)}${cppEiNote}`;
-      console.log(line);
+      let cols = [
+        ` ${String(r.period).padStart(3)} `,
+        fmtCol(r.grossIncome, C.gross),
+        fmtCol(r.federalTax, C.fedTax),
+        fmtCol(r.provincialTax, C.provTax),
+        fmtCol(r.cpp, C.cpp),
+        fmtCol(r.cpp2, C.cpp2),
+        fmtCol(r.ei, C.ei),
+        fmtCol(r.netPay, C.netPay),
+      ];
+      if (hasRrsp) {
+        cols.push(fmtCol(r.rrspEmployee, C.rrsp));
+        cols.push(fmtCol(takeHome, C.takeHome));
+      }
+      cols.push(fmtCol(cumTotal, C.cumCppEi) + cppEiNote);
+      console.log(cols.join(" │ "));
     }
 
     console.log("─".repeat(W));
-    const takeHomeTotal = totals.netPay - totals.rrspEmployee;
-    let totLine =
-      " TOT │" +
-      ` ${fmt(totals.grossIncome).padStart(9)} │` +
-      ` ${fmt(totals.federalTax).padStart(9)} │` +
-      ` ${fmt(totals.provincialTax).padStart(9)} │` +
-      ` ${fmt(totals.cpp).padStart(9)} │` +
-      ` ${fmt(totals.cpp2).padStart(9)} │` +
-      ` ${fmt(totals.ei).padStart(9)} │` +
-      ` ${fmt(totals.netPay).padStart(9)} │`;
-    if (hasRrsp) totLine += ` ${fmt(totals.rrspEmployee).padStart(9)} │ ${fmt(takeHomeTotal).padStart(9)} │`;
-    console.log(totLine);
+    let totCols = [
+      " TOT ",
+      fmtCol(totals.grossIncome, C.gross),
+      fmtCol(totals.federalTax, C.fedTax),
+      fmtCol(totals.provincialTax, C.provTax),
+      fmtCol(totals.cpp, C.cpp),
+      fmtCol(totals.cpp2, C.cpp2),
+      fmtCol(totals.ei, C.ei),
+      fmtCol(totals.netPay, C.netPay),
+    ];
+    if (hasRrsp) {
+      totCols.push(fmtCol(totals.rrspEmployee, C.rrsp));
+      totCols.push(fmtCol(takeHomeTotal, C.takeHome));
+    }
+    totCols.push(pad("", C.cumCppEi));
+    console.log(totCols.join(" │ "));
     console.log("═".repeat(W));
 
     if (hasRrsp) {
