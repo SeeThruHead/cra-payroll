@@ -24,64 +24,56 @@ const renderRow = (r: Row): string => {
   return `${r.label} │ ${c(r.gross, 10)} │ ${c(r.fedTax, 10)} │ ${c(r.provTax, 10)} │ ${c(r.cpp, 10)} │ ${c(r.cpp2, 6)} │ ${c(r.ei, 10)} │ ${c(r.netPay, 10)}${r.rrspEmp !== undefined ? ` │ ${c(r.rrspEmp, 10)} │ ${c(r.takeHome!, 10)}` : ""} │ ${c(r.cumCppEi, 10)}${r.suffix ?? ""}`;
 };
 
-const baseFields = (r: PayPeriodRow): Row => ({
-  label: ` ${String(r.period).padStart(3)} `,
-  gross: r.grossIncome,
-  fedTax: r.federalTax,
-  provTax: r.provincialTax,
-  cpp: r.cpp,
-  cpp2: r.cpp2,
-  ei: r.ei,
-  netPay: r.netPay,
-  cumCppEi: r.cumulativeCpp + r.cumulativeCpp2 + r.cumulativeEi,
-});
-
-const withRrsp = (hasRrsp: boolean) => (row: Row, r: PayPeriodRow): Row =>
-  hasRrsp ? { ...row, rrspEmp: r.rrspEmployee, takeHome: r.netPay - r.rrspEmployee } : row;
-
-const withAnnotation = (firstRow: PayPeriodRow) => (row: Row, r: PayPeriodRow): Row => {
-  if (r.cpp === 0 && r.cpp2 === 0 && r.ei === 0) return { ...row, suffix: " ✓ maxed" };
-  if (r.cpp < firstRow.cpp || r.ei < firstRow.ei) return { ...row, suffix: " ← partial" };
-  return row;
-};
-
-const toRow = (r: PayPeriodRow, firstRow: PayPeriodRow, hasRrsp: boolean): Row =>
+export const renderTable = (yearly: YearlyResult, periodsPerYear: number): string =>
   R.pipe(
-    baseFields(r),
-    row => withRrsp(hasRrsp)(row, r),
-    row => withAnnotation(firstRow)(row, r),
-  );
+    yearly,
 
-export const renderTable = (yearly: YearlyResult, periodsPerYear: number): string => {
-  const { rows, totals } = yearly;
-  const hasRrsp = totals.rrspEmployee > 0 || totals.rrspEmployer > 0;
-  const takeHome = totals.netPay - totals.rrspEmployee;
+    ({ rows, totals }) => {
+      const hasRrsp = totals.rrspEmployee > 0 || totals.rrspEmployer > 0;
+      const takeHome = totals.netPay - totals.rrspEmployee;
+      const rrsp = (fields: Record<string, number | string>) =>
+        hasRrsp ? fields : {};
 
-  const header = renderRow({
-    label: "  #  ",
-    gross: "Gross", fedTax: "Fed Tax", provTax: "Prov Tax",
-    cpp: "CPP", cpp2: "CPP2", ei: "EI", netPay: "Net Pay",
-    ...(hasRrsp ? { rrspEmp: "RRSP Emp", takeHome: "Take Home" } : {}),
-    cumCppEi: "Cum CPP/EI",
-  });
+      const toRow = (r: PayPeriodRow): Row => ({
+        label: ` ${String(r.period).padStart(3)} `,
+        gross: r.grossIncome, fedTax: r.federalTax, provTax: r.provincialTax,
+        cpp: r.cpp, cpp2: r.cpp2, ei: r.ei, netPay: r.netPay,
+        ...rrsp({ rrspEmp: r.rrspEmployee, takeHome: r.netPay - r.rrspEmployee }),
+        cumCppEi: r.cumulativeCpp + r.cumulativeCpp2 + r.cumulativeEi,
+        suffix: r.cpp === 0 && r.cpp2 === 0 && r.ei === 0 ? " ✓ maxed"
+          : r.cpp < rows[0].cpp || r.ei < rows[0].ei ? " ← partial"
+          : "",
+      });
 
-  const totalsStr = renderRow({
-    label: " TOT ",
-    gross: totals.grossIncome, fedTax: totals.federalTax, provTax: totals.provincialTax,
-    cpp: totals.cpp, cpp2: totals.cpp2, ei: totals.ei, netPay: totals.netPay,
-    ...(hasRrsp ? { rrspEmp: totals.rrspEmployee, takeHome } : {}),
-    cumCppEi: "",
-  });
+      const header = renderRow({
+        label: "  #  ",
+        gross: "Gross", fedTax: "Fed Tax", provTax: "Prov Tax",
+        cpp: "CPP", cpp2: "CPP2", ei: "EI", netPay: "Net Pay",
+        ...rrsp({ rrspEmp: "RRSP Emp", takeHome: "Take Home" }),
+        cumCppEi: "Cum CPP/EI",
+      });
 
-  const W = header.length;
+      const totalsStr = renderRow({
+        label: " TOT ",
+        gross: totals.grossIncome, fedTax: totals.federalTax, provTax: totals.provincialTax,
+        cpp: totals.cpp, cpp2: totals.cpp2, ei: totals.ei, netPay: totals.netPay,
+        ...rrsp({ rrspEmp: totals.rrspEmployee, takeHome }),
+        cumCppEi: "",
+      });
 
-  return `Per-Paycheck Table (2026)
+      return { rows, totals, hasRrsp, header, totalsStr, toRow };
+    },
+
+    ({ rows, totals, hasRrsp, header, totalsStr, toRow }) => {
+      const W = header.length;
+      return `Per-Paycheck Table (2026)
 ${line("═", W)}
 ${header}
 ${line("─", W)}
-${rows.map(r => renderRow(toRow(r, rows[0], hasRrsp))).join("\n")}
+${rows.map(r => renderRow(toRow(r))).join("\n")}
 ${line("─", W)}
 ${totalsStr}
 ${line("═", W)}${
 when(hasRrsp, `\n  RRSP (Employer match): $${money(totals.rrspEmployer)}/yr ($${money(totals.rrspEmployer / periodsPerYear)}/period)`)}`;
-};
+    },
+  );
