@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, renameSync, unlinkSync, chmodSync } from "fs";
 import { dirname, resolve } from "path";
 
 const REPO = "SeeThruHead/cra-payroll";
-const VERSION = "0.0.11";
+const VERSION = "0.0.12";
 
 export const currentVersion = (): string => VERSION;
 
