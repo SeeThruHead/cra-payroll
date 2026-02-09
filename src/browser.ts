@@ -114,7 +114,7 @@ export const launchSession = async (headless: boolean): Promise<Result<BrowserSe
         ]),
         "browser launch"
       );
-      return r.map(b => b as Browser);
+      return r;
     },
     3, 1000, "browser launch"
   );
@@ -205,8 +205,11 @@ const formMethods = (page: Page) => ({
           el.dispatchEvent(new Event("input", { bubbles: true }));
         };
 
+        const labelFor = (el: HTMLElement) =>
+          el.id ? document.querySelector(`label[for="${el.id}"]`)?.textContent ?? "" : "";
+
         for (const s of document.querySelectorAll("select")) {
-          const label = (s as any).labels?.[0]?.textContent ?? "";
+          const label = labelFor(s);
           const title = s.title ?? "";
           if (label.includes(match) || title.includes(match)) {
             const opt = Array.from(s.options).find(o => o.text.includes(text));
@@ -286,8 +289,11 @@ const formMethods = (page: Page) => ({
       page.evaluate((match: string, val: string) => {
         const isVisible = (el: HTMLElement) => el.offsetParent !== null;
 
+        const labelFor = (el: HTMLElement) =>
+          el.id ? document.querySelector(`label[for="${el.id}"]`)?.textContent ?? "" : "";
+
         for (const inp of document.querySelectorAll("input")) {
-          const label = (inp as any).labels?.[0]?.textContent ?? "";
+          const label = labelFor(inp);
           const name = inp.name ?? "";
           if (label.includes(match) || name.includes(match)) {
             if (inp.type !== "checkbox" && inp.type !== "radio" && isVisible(inp)) {
@@ -307,11 +313,14 @@ const formMethods = (page: Page) => ({
   checkCheckboxByLabel: async (labelMatch: string) =>
     safe(
       page.evaluate((match: string) => {
-        const cb = Array.from(document.querySelectorAll("input[type='checkbox']"))
-          .find((b: any) => {
-            const label = b.labels?.[0]?.textContent ?? b.name ?? "";
+        const labelFor = (el: HTMLElement) =>
+          el.id ? document.querySelector(`label[for="${el.id}"]`)?.textContent ?? "" : "";
+
+        const cb = Array.from(document.querySelectorAll<HTMLInputElement>("input[type='checkbox']"))
+          .find(b => {
+            const label = labelFor(b) || b.name;
             return label.includes(match);
-          }) as HTMLInputElement | undefined;
+          });
         if (cb && !cb.checked) cb.click();
       }, labelMatch),
       `check "${labelMatch}"`
@@ -320,8 +329,11 @@ const formMethods = (page: Page) => ({
   clickRadioByLabel: async (labelMatch: string) =>
     safe(
       page.evaluate((match: string) => {
-        const radio = Array.from(document.querySelectorAll("input[type='radio']"))
-          .find((r: any) => (r.labels?.[0]?.textContent ?? "").includes(match)) as HTMLInputElement | undefined;
+        const labelFor = (el: HTMLElement) =>
+          el.id ? document.querySelector(`label[for="${el.id}"]`)?.textContent ?? "" : "";
+
+        const radio = Array.from(document.querySelectorAll<HTMLInputElement>("input[type='radio']"))
+          .find(r => (labelFor(r)).includes(match));
         if (radio) radio.click();
       }, labelMatch),
       `radio "${labelMatch}"`
@@ -337,10 +349,10 @@ const readMethods = (page: Page) => ({
 
   readErrors: async (): Promise<Result<string | null, string>> => {
     const text = await page.evaluate(() => {
-      const els = document.querySelectorAll('.error, .alert-danger, [role="alert"], .text-danger');
+      const els = document.querySelectorAll<HTMLElement>('.error, .alert-danger, [role="alert"], .text-danger');
       const texts: string[] = [];
       els.forEach(el => {
-        const t = (el as HTMLElement).innerText?.trim();
+        const t = el.innerText?.trim();
         if (t && t.length > 0 && !t.includes("Loading")) texts.push(t);
       });
       return texts.length ? texts.join("; ") : null;

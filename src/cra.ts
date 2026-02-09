@@ -171,23 +171,23 @@ export const calculatePayroll = async (
   const guard = withErrorRecovery(session);
 
   const entry = await guard(loadEntryPage(session));
-  if (entry.isErr()) return entry;
+  if (entry.isErr()) return err(entry.error);
   log("entry page loaded");
 
   const advance = await guard(advancePastEntry(session));
-  if (advance.isErr()) return advance;
+  if (advance.isErr()) return err(advance.error);
 
   const step1 = await guard(fillEmployeeInfo(session, config));
-  if (step1.isErr()) return step1;
+  if (step1.isErr()) return err(step1.error);
 
   const step2 = await guard(fillSalaryInfo(session, config, salaryPerPeriod, rrspEmployerPerPeriod, rrspEmployeePerPeriod));
-  if (step2.isErr()) return step2;
+  if (step2.isErr()) return err(step2.error);
 
   const step3 = await guard(fillCppEi(session, config));
-  if (step3.isErr()) return step3;
+  if (step3.isErr()) return err(step3.error);
 
   const text = await guard(readResults(session));
-  if (text.isErr()) return text;
+  if (text.isErr()) return err(text.error);
 
   log("got results, parsing...");
   const parsed = parseResults(text.value, config, periodsPerYear);

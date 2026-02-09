@@ -47,6 +47,11 @@ interface Cumulative {
   ei: number;
 }
 
+interface ReduceAcc {
+  cumulative: Cumulative;
+  rows: PayPeriodRow[];
+}
+
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 const clampToRemaining = (perPeriod: number, cumulative: number, max: number): number =>
@@ -74,20 +79,20 @@ const advanceCumulative = (cum: Cumulative, ded: { cpp: number; cpp2: number; ei
   ei: round2(cum.ei + ded.ei),
 });
 
+const totalDeductions = (taxes: { federalTax: number; provincialTax: number }, ded: { cpp: number; cpp2: number; ei: number }) =>
+  taxes.federalTax + taxes.provincialTax + ded.cpp + ded.cpp2 + ded.ei;
+
 const buildRow = (period: number, active: PayrollResult, maxed: PayrollResult, cum: Cumulative) =>
   R.pipe(
-    periodDeductions(active, cum),
-    ded => ({ ded, taxes: periodTaxes(active, maxed, cum) }),
-    ({ ded, taxes }) => ({ ded, taxes, totalDed: taxes.federalTax + taxes.provincialTax + ded.cpp + ded.cpp2 + ded.ei }),
-    ({ ded, taxes, totalDed }) => ({ ded, taxes, totalDed, nextCum: advanceCumulative(cum, ded) }),
+    { ded: periodDeductions(active, cum), taxes: periodTaxes(active, maxed, cum) },
+    ctx => ({ ...ctx, totalDed: totalDeductions(ctx.taxes, ctx.ded), nextCum: advanceCumulative(cum, ctx.ded) }),
     ({ ded, taxes, totalDed, nextCum }): { row: PayPeriodRow; nextCumulative: Cumulative } => ({
       row: {
         period,
         grossIncome: active.grossIncome,
         rrspEmployee: active.rrspEmployee,
         rrspEmployer: active.rrspEmployer,
-        ...taxes,
-        ...ded,
+        ...taxes, ...ded,
         totalDeductions: totalDed,
         netPay: active.grossIncome - totalDed,
         cumulativeCpp: nextCum.cpp,
@@ -98,21 +103,23 @@ const buildRow = (period: number, active: PayrollResult, maxed: PayrollResult, c
     }),
   );
 
-const sumTotals = (rows: PayPeriodRow[]): YearlyResult["totals"] => {
-  const sum = (fn: (r: PayPeriodRow) => number) => round2(R.sumBy(rows, fn));
-  return {
-    grossIncome:    sum(r => r.grossIncome),
-    rrspEmployee:   sum(r => r.rrspEmployee),
-    rrspEmployer:   sum(r => r.rrspEmployer),
-    federalTax:     sum(r => r.federalTax),
-    provincialTax:  sum(r => r.provincialTax),
-    cpp:            sum(r => r.cpp),
-    cpp2:           sum(r => r.cpp2),
-    ei:             sum(r => r.ei),
-    totalDeductions: sum(r => r.totalDeductions),
-    netPay:         sum(r => r.netPay),
-  };
-};
+const sumField = (rows: PayPeriodRow[], field: keyof PayPeriodRow) =>
+  round2(R.sumBy(rows, r => r[field]));
+
+const sumTotals = (rows: PayPeriodRow[]): YearlyResult["totals"] => ({
+  grossIncome:    sumField(rows, "grossIncome"),
+  rrspEmployee:   sumField(rows, "rrspEmployee"),
+  rrspEmployer:   sumField(rows, "rrspEmployer"),
+  federalTax:     sumField(rows, "federalTax"),
+  provincialTax:  sumField(rows, "provincialTax"),
+  cpp:            sumField(rows, "cpp"),
+  cpp2:           sumField(rows, "cpp2"),
+  ei:             sumField(rows, "ei"),
+  totalDeductions: sumField(rows, "totalDeductions"),
+  netPay:         sumField(rows, "netPay"),
+});
+
+const INITIAL_ACC: ReduceAcc = { cumulative: { cpp: 0, cpp2: 0, ei: 0 }, rows: [] };
 
 export const buildYearlyTable = (
   active: PayrollResult,
@@ -123,11 +130,11 @@ export const buildYearlyTable = (
   R.pipe(
     R.range(1, periodsPerYear + 1),
     R.reduce(
-      (acc, period) => {
+      (acc: ReduceAcc, period) => {
         const { row, nextCumulative } = buildRow(period, active, maxed, acc.cumulative);
         return { cumulative: nextCumulative, rows: [...acc.rows, row] };
       },
-      { cumulative: { cpp: 0, cpp2: 0, ei: 0 } as Cumulative, rows: [] as PayPeriodRow[] },
+      INITIAL_ACC,
     ),
     ({ rows }) => ({ rows, totals: sumTotals(rows) }),
   );

@@ -42,7 +42,7 @@ export const checkForUpdate = async (): Promise<Result<ReleaseInfo | null, strin
     });
     if (!resp.ok) return ok(null);
 
-    const data = await resp.json() as { tag_name: string; assets: { name: string; browser_download_url: string }[] };
+    const data: { tag_name: string; assets: { name: string; browser_download_url: string }[] } = await resp.json();
     const latestTag = data.tag_name;
     const latestVersion = latestTag.replace(/^v/, "");
 

@@ -61,11 +61,11 @@ const totalsRow = (totals: YearlyResult["totals"], rrsp: boolean): Row => ({
 
 export const renderTable = (yearly: YearlyResult, periodsPerYear: number): string =>
   R.pipe(
-    { ...yearly, rrsp: showRrsp(yearly.totals) },
+    yearly,
+    ctx => ({ ...ctx, rrsp: showRrsp(ctx.totals) }),
     ctx => ({ ...ctx, header: renderRow(headerRow(ctx.rrsp)) }),
-    ctx => ({ ...ctx, totalsStr: renderRow(totalsRow(ctx.totals, ctx.rrsp)) }),
-    ctx => ({ ...ctx, W: ctx.header.length }),
     ctx => ({ ...ctx, bodyRows: ctx.rows.map(r => renderRow(toRow(r, ctx.rows[0], ctx.rrsp))) }),
+    ctx => ({ ...ctx, totalsStr: renderRow(totalsRow(ctx.totals, ctx.rrsp)), W: ctx.header.length }),
     ctx =>
 `Per-Paycheck Table (2026)
 ${line("═", ctx.W)}

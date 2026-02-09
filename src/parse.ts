@@ -22,13 +22,13 @@ const extractAll = (text: string) =>
   R.pipe(
     R.entries(PATTERNS),
     R.reduce(
-      (acc, [key, pattern]) => {
+      (acc: { values: Record<string, number>; missing: string[] }, [key, pattern]) => {
         const value = extractField(text, pattern);
         return value === null
           ? { ...acc, missing: [...acc.missing, key] }
           : { ...acc, values: { ...acc.values, [key]: value } };
       },
-      { values: {} as Record<string, number>, missing: [] as string[] },
+      { values: {}, missing: [] },
     ),
   );
 
