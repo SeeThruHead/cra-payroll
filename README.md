@@ -127,25 +127,52 @@ CLI args override config file values. Missing values are prompted interactively.
 | CPP2 max (additional) | $416.00 |
 | EI max premium | $1,123.07 |
 
-## Local Development
+## Run from source
+
+If you'd rather not download a binary, you can clone and run directly. You'll need [Google Chrome](https://www.google.com/chrome/) installed.
+
+### With Bun
 
 ```bash
-# Requires Bun (https://bun.sh) and Google Chrome
+git clone https://github.com/SeeThruHead/cra-payroll.git
+cd cra-payroll
 bun install
+bun run dev -- --salary 100000
+bun run dev -- --salary 263000 --table
+```
 
+### With Node
+
+```bash
+git clone https://github.com/SeeThruHead/cra-payroll.git
+cd cra-payroll
+npm install
+npx tsx src/cli.ts --salary 100000
+npx tsx src/cli.ts --salary 263000 --table
+```
+
+## Development
+
+```bash
 # Run directly
 bun run dev -- --salary 100000
 
 # Build standalone binary
 bun run build
 
-# Run tests (hits CRA — may be flaky)
-bun test --max-concurrency 1
+# Unit tests (fast, no browser)
+bun test
+
+# Integration tests (hits CRA, needs Chrome, may be flaky)
+bun run test:integration
+
+# All tests
+bun run test:all
 ```
 
 ## How it works
 
-1. Launches your system Chrome via Playwright (headed by default — CRA blocks headless)
+1. Launches your system Chrome via Puppeteer (headed by default — CRA blocks headless)
 2. Fills out the PDOC wizard: province, pay period, salary, RRSP contributions
 3. Sets CPP/EI status and hits Calculate
 4. Scrapes the results page for taxes, deductions, and net pay

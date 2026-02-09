@@ -1,5 +1,6 @@
 import puppeteer, { type Page, type Browser } from "puppeteer-core";
 import { ok, err, Result, ResultAsync } from "neverthrow";
+import { statSync } from "fs";
 import { PAY_PERIODS, type PayrollConfig, type PayrollResult, type PayrollService } from "./types";
 
 export type { PayrollConfig, PayrollResult } from "./types";
@@ -39,11 +40,7 @@ function findChrome(): Result<string, string> {
 
   const candidates = paths[process.platform] ?? [];
   for (const p of candidates) {
-    try {
-      const { statSync } = require("fs");
-      statSync(p);
-      return ok(p);
-    } catch {}
+    try { statSync(p); return ok(p); } catch {}
   }
 
   return err(

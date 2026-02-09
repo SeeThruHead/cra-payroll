@@ -340,9 +340,11 @@ if (wantTable || wantAnnual || wantMonthly) {
 
   if (wantTable) {
     // Header
+    const hasRrsp = totals.rrspEmployee > 0 || totals.rrspEmployer > 0;
     console.log("📊 Per-Paycheck Table (2026)");
-    console.log("═".repeat(120));
-    console.log(
+    const W = hasRrsp ? 142 : 120;
+    console.log("═".repeat(W));
+    let header =
       "  #  │" +
       "     Gross │" +
       "   Fed Tax │" +
@@ -350,32 +352,36 @@ if (wantTable || wantAnnual || wantMonthly) {
       "       CPP │" +
       "      CPP2 │" +
       "        EI │" +
-      "   Net Pay │" +
-      " Cum CPP/EI"
-    );
-    console.log("─".repeat(120));
+      "   Net Pay │";
+    if (hasRrsp) header += "  RRSP Emp │ Take Home │";
+    header += " Cum CPP/EI";
+    console.log(header);
+    console.log("─".repeat(W));
 
     for (const r of rows) {
       const cumTotal = r.cumulativeCpp + r.cumulativeCpp2 + r.cumulativeEi;
+      const takeHome = r.netPay - r.rrspEmployee;
       const cppEiNote =
         (r.cpp === 0 && r.cpp2 === 0 && r.ei === 0) ? " ✓ maxed" :
         (r.cpp < rows[0].cpp || r.ei < rows[0].ei) ? " ← partial" : "";
 
-      console.log(
-        ` ${String(r.period).padStart(2)} │` +
+      let line =
+        ` ${String(r.period).padStart(3)} │` +
         ` ${fmt(r.grossIncome).padStart(9)} │` +
         ` ${fmt(r.federalTax).padStart(9)} │` +
         ` ${fmt(r.provincialTax).padStart(9)} │` +
         ` ${fmt(r.cpp).padStart(9)} │` +
         ` ${fmt(r.cpp2).padStart(9)} │` +
         ` ${fmt(r.ei).padStart(9)} │` +
-        ` ${fmt(r.netPay).padStart(9)} │` +
-        ` ${fmt(cumTotal).padStart(9)}${cppEiNote}`
-      );
+        ` ${fmt(r.netPay).padStart(9)} │`;
+      if (hasRrsp) line += ` ${fmt(r.rrspEmployee).padStart(9)} │ ${fmt(takeHome).padStart(9)} │`;
+      line += ` ${fmt(cumTotal).padStart(9)}${cppEiNote}`;
+      console.log(line);
     }
 
-    console.log("─".repeat(120));
-    console.log(
+    console.log("─".repeat(W));
+    const takeHomeTotal = totals.netPay - totals.rrspEmployee;
+    let totLine =
       " TOT │" +
       ` ${fmt(totals.grossIncome).padStart(9)} │` +
       ` ${fmt(totals.federalTax).padStart(9)} │` +
@@ -383,14 +389,13 @@ if (wantTable || wantAnnual || wantMonthly) {
       ` ${fmt(totals.cpp).padStart(9)} │` +
       ` ${fmt(totals.cpp2).padStart(9)} │` +
       ` ${fmt(totals.ei).padStart(9)} │` +
-      ` ${fmt(totals.netPay).padStart(9)} │`
-    );
-    console.log("═".repeat(120));
+      ` ${fmt(totals.netPay).padStart(9)} │`;
+    if (hasRrsp) totLine += ` ${fmt(totals.rrspEmployee).padStart(9)} │ ${fmt(takeHomeTotal).padStart(9)} │`;
+    console.log(totLine);
+    console.log("═".repeat(W));
 
-    if (totals.rrspEmployee > 0) {
-      console.log(`\n  RRSP (Employee): $${fmt(totals.rrspEmployee)}/yr ($${fmt(totals.rrspEmployee / periodsPerYear)}/period)`);
-      console.log(`  RRSP (Employer): $${fmt(totals.rrspEmployer)}/yr ($${fmt(totals.rrspEmployer / periodsPerYear)}/period)`);
-      console.log(`  💰 Net after RRSP: $${fmt(totals.netPay - totals.rrspEmployee)}/yr`);
+    if (hasRrsp) {
+      console.log(`\n  RRSP (Employer match): $${fmt(totals.rrspEmployer)}/yr ($${fmt(totals.rrspEmployer / periodsPerYear)}/period)`);
     }
   }
 
