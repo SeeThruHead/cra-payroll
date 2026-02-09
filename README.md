@@ -2,36 +2,77 @@
 
 Calculate Canadian payroll deductions using CRA's [Payroll Deductions Online Calculator (PDOC)](https://apps.cra-arc.gc.ca/ebci/rhpd/beta/entry).
 
-Uses Playwright to automate the CRA wizard and return your net pay per pay period.
+Automates the CRA wizard via Playwright and returns your net pay, taxes, CPP, EI, and RRSP breakdown — per paycheck, monthly, or annually.
 
-## Install
+## Download
+
+Grab the latest binary for your platform from [**Releases**](https://github.com/SeeThruHead/cra-payroll/releases):
+
+| Platform | File |
+|----------|------|
+| macOS (Apple Silicon) | `cra-payroll-darwin-arm64` |
+| macOS (Intel) | `cra-payroll-darwin-x64` |
+| Linux (x64) | `cra-payroll-linux-x64` |
 
 ```bash
-bun install
-bun run build
-```
+# Example: macOS Apple Silicon
+curl -L -o cra-payroll https://github.com/SeeThruHead/cra-payroll/releases/latest/download/cra-payroll-darwin-arm64
+chmod +x cra-payroll
+sudo mv cra-payroll /usr/local/bin/
 
-This produces a standalone `cra-payroll` binary — no Node or Bun needed to run it.
+# Install Chromium (required)
+npx playwright install chromium
+```
 
 ## Usage
 
 ```bash
-# Use config.json in current dir (or ~/.cra-payroll.json)
-./cra-payroll
+# Interactive — prompts for missing values
+cra-payroll
 
-# Override with CLI args
-./cra-payroll --salary 120000 --province "British Columbia" --cpp-maxed --ei-maxed
+# CLI args
+cra-payroll --salary 120000 --province "British Columbia"
 
-# Watch the browser do its thing
-./cra-payroll --headed
+# Per-paycheck table for the year (tracks CPP/EI maxout)
+cra-payroll --salary 263000 --table
 
-# Dev mode (no compile step)
-bun run dev -- --headed --salary 100000
+# Annual totals
+cra-payroll --salary 100000 --annual
+
+# Monthly averages
+cra-payroll --salary 100000 --monthly
+
+# Combine them
+cra-payroll --salary 263000 --table --annual --monthly
+
+# Verbose logging
+cra-payroll -v --salary 100000
+```
+
+### Example output (`--table`)
+
+```
+📊 Per-Paycheck Table (2026)
+══════════════════════════════════════════════════════════════════════════════════════════════
+  #  │     Gross │   Fed Tax │  Prov Tax │       CPP │        EI │   Net Pay │ Cum CPP/EI
+──────────────────────────────────────────────────────────────────────────────────────────────
+  1  │ 10,958.33 │  2,232.82 │  1,431.13 │    669.42 │    178.62 │  6,446.34 │    848.04
+  2  │ 10,958.33 │  2,232.82 │  1,431.13 │    669.42 │    178.62 │  6,446.34 │  1,696.08
+ ... │       ... │       ... │       ... │       ... │       ... │       ... │       ...
+  7  │ 10,958.33 │  2,232.82 │  1,431.13 │    213.93 │     51.35 │  7,029.10 │  5,353.52 ← partial
+  8  │ 10,958.33 │  2,232.82 │  1,431.13 │      0.00 │      0.00 │  7,294.38 │  5,353.52 ✓ maxed
+ ... │       ... │       ... │       ... │       ... │       ... │       ... │       ...
 ```
 
 ## Config
 
-Create `config.json` or `~/.cra-payroll.json`:
+Config is loaded from the first file found:
+1. `--config <path>`
+2. `./config.json`
+3. `~/.config/cra-payroll.json`
+4. `~/.cra-payroll.json`
+
+CLI args override config file values. Missing values are prompted interactively.
 
 ```json
 {
@@ -39,9 +80,7 @@ Create `config.json` or `~/.cra-payroll.json`:
   "annualSalary": 100000,
   "payPeriod": "Semi-monthly (24 pay periods a year)",
   "rrspEmployeePercent": 4,
-  "rrspEmployerPercent": 4,
-  "cppMaxedOut": false,
-  "eiMaxedOut": false
+  "rrspEmployerPercent": 4
 }
 ```
 
@@ -50,32 +89,51 @@ Create `config.json` or `~/.cra-payroll.json`:
 | Option | CLI flag | Config key | Default |
 |--------|----------|------------|---------|
 | Province | `-p`, `--province` | `province` | `Ontario` |
-| Annual salary | `-s`, `--salary` | `annualSalary` | `100000` |
-| Pay period | `--pay-period` | `payPeriod` | `Semi-monthly (24 pay periods a year)` |
+| Annual salary | `-s`, `--salary` | `annualSalary` | _(prompted)_ |
+| Pay period | `--pay-period` | `payPeriod` | `Semi-monthly (24)` |
 | Employee RRSP % | `--rrsp-employee` | `rrspEmployeePercent` | `4` |
-| Employer RRSP match % | `--rrsp-employer` | `rrspEmployerPercent` | `4` |
-| CPP maxed out | `--cpp-maxed` | `cppMaxedOut` | `false` |
-| EI maxed out | `--ei-maxed` | `eiMaxedOut` | `false` |
-| Show browser | `--headed` | — | `false` |
-| Config file path | `-c`, `--config` | — | `./config.json` |
+| Employer RRSP % | `--rrsp-employer` | `rrspEmployerPercent` | `4` |
+| CPP maxed | `--cpp-maxed` | `cppMaxedOut` | `false` |
+| EI maxed | `--ei-maxed` | `eiMaxedOut` | `false` |
+| Yearly table | `-t`, `--table` | — | `false` |
+| Annual totals | `-a`, `--annual` | — | `false` |
+| Monthly averages | `-m`, `--monthly` | — | `false` |
+| Verbose | `-v`, `--verbose` | — | `false` |
+| Headless | `--headless` | — | `false` |
+| Config path | `-c`, `--config` | — | — |
 
-### Pay periods
+### 2026 CPP/EI Maximums (used for `--table`)
 
-- `Daily (240 pay periods a year)`
-- `Weekly (52 pay periods a year)`
-- `Biweekly (26 pay periods a year)`
-- `Semi-monthly (24 pay periods a year)`
-- `Monthly (12 pay periods a year)`
+| | Amount |
+|---|---|
+| CPP max contribution | $4,230.45 |
+| CPP2 max (additional) | $416.00 |
+| EI max premium | $1,123.07 |
+
+## Local Development
+
+```bash
+# Requires Bun (https://bun.sh)
+bun install
+npx playwright install chromium
+
+# Run directly
+bun run dev -- --salary 100000
+
+# Build standalone binary
+bun run build
+
+# Run tests (hits CRA — may be flaky)
+bun test --max-concurrency 1
+```
 
 ## How it works
 
-The tool launches a Chromium browser via Playwright and fills out the CRA PDOC wizard:
-
-1. Selects "Salary" calculation type
-2. Fills province, pay period, and date
-3. Enters salary per period, employer/employee RRSP contributions
-4. Sets CPP/EI status (maxed or year-to-date)
-5. Hits Calculate and scrapes the result
+1. Launches Chromium via Playwright (headed by default — CRA blocks headless)
+2. Fills out the PDOC wizard: province, pay period, salary, RRSP contributions
+3. Sets CPP/EI status and hits Calculate
+4. Scrapes the results page for taxes, deductions, and net pay
+5. For `--table` mode: runs twice (with/without CPP/EI) and simulates each paycheck using the 2026 maximums
 
 ## License
 
