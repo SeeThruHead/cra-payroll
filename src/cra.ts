@@ -74,20 +74,20 @@ const fillSalaryInfo = async (
 
   if (config.rrspEmployerPercent > 0) {
     log("setting employer RRSP...");
-    const check = await session.checkCheckboxByLabel("Employer");
+    const check = await session.checkCheckboxByLabel("Employer's contributions to the employee's RRSP");
     if (check.isErr()) log(`employer RRSP checkbox warning: ${check.error}`);
     await session.settle();
-    const fill = await session.fillInputByLabel("Employer", rrspEmployerPerPeriod);
+    const fill = await session.fillInputByLabel("Employer's contributions to the employee's RRSP", rrspEmployerPerPeriod);
     if (fill.isErr()) log(`employer RRSP fill warning: ${fill.error}`);
     else log(`employer RRSP: ${rrspEmployerPerPeriod}/period`);
   }
 
   if (config.rrspEmployeePercent > 0) {
     log("setting employee RRSP...");
-    const check = await session.checkCheckboxByLabel("RRSPs, RPP or PRPP");
+    const check = await session.checkCheckboxByLabel("Employee's contributions to RRSPs or RPPs or PRPPs");
     if (check.isErr()) log(`employee RRSP checkbox warning: ${check.error}`);
     await session.settle();
-    const fill = await session.fillInputByLabel("contributions to a RRSP", rrspEmployeePerPeriod);
+    const fill = await session.fillInputByLabel("Employee's contributions to a RRSP", rrspEmployeePerPeriod);
     if (fill.isErr()) log(`employee RRSP fill warning: ${fill.error}`);
     else log(`employee RRSP: ${rrspEmployeePerPeriod}/period`);
   }
