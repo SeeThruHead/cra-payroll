@@ -14,6 +14,10 @@ if [[ -n "$(git status --porcelain)" ]]; then
   exit 1
 fi
 
+# Restore README on exit (success or failure)
+cleanup() { [ -f README.md.bak ] && mv README.md.bak README.md; }
+trap cleanup EXIT
+
 # Bump version (updates package.json, commits, and tags)
 npm version "$BUMP"
 
@@ -25,6 +29,5 @@ bun run build:npm
 cp README.md README.md.bak
 cp npm-README.md README.md
 npm publish --access public
-mv README.md.bak README.md
 
 echo "✅ Released $(node -p "require('./package.json').version")"
