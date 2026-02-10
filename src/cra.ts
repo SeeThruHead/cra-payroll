@@ -74,7 +74,8 @@ const fillSalaryInfo = async (
 
   if (config.rrspEmployerPercent > 0) {
     log("setting employer RRSP...");
-    await session.checkCheckboxByLabel("Employer");
+    const check = await session.checkCheckboxByLabel("Employer");
+    if (check.isErr()) log(`employer RRSP checkbox warning: ${check.error}`);
     await session.settle();
     const fill = await session.fillInputByLabel("Employer", rrspEmployerPerPeriod);
     if (fill.isErr()) log(`employer RRSP fill warning: ${fill.error}`);
@@ -83,14 +84,19 @@ const fillSalaryInfo = async (
 
   if (config.rrspEmployeePercent > 0) {
     log("setting employee RRSP...");
-    await session.checkCheckboxByLabel("Employee");
+    const check = await session.checkCheckboxByLabel("RRSPs, RPP or PRPP");
+    if (check.isErr()) log(`employee RRSP checkbox warning: ${check.error}`);
     await session.settle();
-    const fill = await session.fillInputByLabel("deduct at source", rrspEmployeePerPeriod);
+    const fill = await session.fillInputByLabel("contributions to a RRSP", rrspEmployeePerPeriod);
     if (fill.isErr()) log(`employee RRSP fill warning: ${fill.error}`);
     else log(`employee RRSP: ${rrspEmployeePerPeriod}/period`);
   }
 
   await session.settle();
+
+  // Dump form state in verbose mode for debugging
+  const step2Text = await session.readMainText();
+  if (step2Text.isOk()) log(`\n── STEP 2 FORM STATE ──\n${step2Text.value}\n── END STEP 2 ──\n`);
 
   const next = await session.clickButton("Next");
   if (next.isErr()) return next;
@@ -190,6 +196,7 @@ export const calculatePayroll = async (
   if (text.isErr()) return err(text.error);
 
   log("got results, parsing...");
+  log(`\n── RAW CRA PAGE TEXT ──\n${text.value}\n── END RAW TEXT ──\n`);
   const parsed = parseResults(text.value, config, periodsPerYear);
 
   log("closing browser");
