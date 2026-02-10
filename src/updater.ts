@@ -4,9 +4,10 @@ import { existsSync, mkdirSync, renameSync, unlinkSync, chmodSync } from "fs";
 import { dirname, resolve } from "path";
 
 const REPO = "SeeThruHead/cra-payroll";
-const VERSION = "0.2.0";
 
-export const currentVersion = (): string => VERSION;
+// @ts-ignore — resolved at bundle time or runtime
+import pkg from "../package.json";
+export const currentVersion = (): string => pkg.version;
 
 interface ReleaseInfo {
   tag: string;
