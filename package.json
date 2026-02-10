@@ -1,6 +1,6 @@
 {
   "name": "@seethruhead/cra-payroll",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Calculate Canadian payroll deductions using CRA's Payroll Deductions Online Calculator",
   "type": "module",
   "bin": {
@@ -13,13 +13,21 @@
     "dev": "bun run src/cli.ts",
     "build": "bun build --compile src/cli.ts --outfile cra-payroll --external electron",
     "build:npm": "bun build src/cli.ts --outfile dist/cra-payroll.js --target=node",
-
     "release": "bash release.sh",
     "test": "bun test src/unit.test.ts",
     "test:integration": "bun test src/integration.test.ts --timeout 120000 --max-concurrency 1",
     "test:all": "bun test --timeout 120000 --max-concurrency 1"
   },
-  "keywords": ["canada", "payroll", "cra", "tax", "deductions", "calculator", "pdoc", "rrsp"],
+  "keywords": [
+    "canada",
+    "payroll",
+    "cra",
+    "tax",
+    "deductions",
+    "calculator",
+    "pdoc",
+    "rrsp"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
