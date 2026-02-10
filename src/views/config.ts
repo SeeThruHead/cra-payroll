@@ -6,6 +6,7 @@ export const renderConfig = (config: PayrollConfig, showCppEi: boolean): string 
 CRA Payroll Deductions Calculator
 ${line("─", 40)}
 Province:          ${config.province}
+Year:              ${config.year}
 Annual Salary:     $${money(config.annualSalary)}
 Pay Period:        ${config.payPeriod}
 RRSP (Employee):   ${config.rrspEmployeePercent}%

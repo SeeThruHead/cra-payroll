@@ -59,7 +59,7 @@ const totalsRow = (totals: YearlyResult["totals"], rrsp: boolean): Row => ({
   cumCppEi: "",
 });
 
-export const renderTable = (yearly: YearlyResult, periodsPerYear: number): string =>
+export const renderTable = (yearly: YearlyResult, periodsPerYear: number, year: number = 2026): string =>
   R.pipe(
     yearly,
     ctx => ({ ...ctx, rrsp: showRrsp(ctx.totals) }),
@@ -67,7 +67,7 @@ export const renderTable = (yearly: YearlyResult, periodsPerYear: number): strin
     ctx => ({ ...ctx, bodyRows: ctx.rows.map(r => renderRow(toRow(r, ctx.rows[0], ctx.rrsp))) }),
     ctx => ({ ...ctx, totalsStr: renderRow(totalsRow(ctx.totals, ctx.rrsp)), W: ctx.header.length }),
     ctx =>
-`Per-Paycheck Table (2026)
+`Per-Paycheck Table (${year})
 ${line("═", ctx.W)}
 ${ctx.header}
 ${line("─", ctx.W)}

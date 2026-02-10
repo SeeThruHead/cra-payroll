@@ -76,7 +76,7 @@ export interface BrowserSession {
   // Form interaction
   clickButton(textMatch: string): Promise<Result<void, string>>;
   selectByLabel(labelMatch: string, optionText: string): Promise<Result<void, string>>;
-  selectLatestYear(): Promise<Result<string, string>>;
+  selectYear(year: number): Promise<Result<string, string>>;
   selectDateMonth(month: string): Promise<Result<void, string>>;
   selectDateDay(day: string): Promise<Result<void, string>>;
   fillInputByLabel(labelMatch: string, value: string): Promise<Result<void, string>>;
@@ -224,9 +224,9 @@ const formMethods = (page: Page) => ({
       `select ${labelMatch}="${optionText}"`
     ),
 
-  selectLatestYear: async () =>
+  selectYear: async (year: number) =>
     safe(
-      page.evaluate(() => {
+      page.evaluate((y: number) => {
         const fireChangeEvents = (el: HTMLElement) => {
           el.dispatchEvent(new Event("change", { bubbles: true }));
           el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -235,13 +235,13 @@ const formMethods = (page: Page) => ({
         const s = Array.from(document.querySelectorAll("select"))
           .find(el => el.id === "datePaidYear" || el.title?.toLowerCase().includes("year"));
         if (!s) throw new Error("Year select not found");
-        const years = Array.from(s.options).map(o => parseInt(o.value)).filter(n => !isNaN(n)).sort((a, b) => b - a);
-        if (!years.length) throw new Error("No valid years");
-        s.value = years[0].toString();
+        const opt = Array.from(s.options).find(o => parseInt(o.value) === y);
+        if (!opt) throw new Error(`Year ${y} not available in dropdown`);
+        s.value = opt.value;
         fireChangeEvents(s);
-        return years[0].toString();
-      }),
-      "select year"
+        return opt.value;
+      }, year),
+      `select year ${year}`
     ),
 
   selectDateMonth: async (month: string) =>

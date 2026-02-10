@@ -11,6 +11,7 @@ const BASE: PayrollConfig = {
   province: "Ontario",
   annualSalary: 100_000,
   payPeriod: "Semi-monthly (24 pay periods a year)",
+  year: 2026,
   rrspEmployeePercent: 0,
   rrspEmployerPercent: 0,
   cppMaxedOut: false,

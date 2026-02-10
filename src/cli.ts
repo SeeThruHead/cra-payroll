@@ -45,6 +45,7 @@ const { values } = parseArgs({
     salary: { type: "string", short: "s" },
     province: { type: "string", short: "p" },
     "pay-period": { type: "string" },
+    year: { type: "string", short: "y" },
     "rrsp-employee": { type: "string" },
     "rrsp-employer": { type: "string" },
     "cpp-maxed": { type: "boolean", default: false },
@@ -74,6 +75,7 @@ if (values.help) {
     -c, --config <path>       Path to config file (default: ./config.json or ~/.cra-payroll.json)
     -s, --salary <amount>     Annual salary
     -p, --province <name>     Province of employment
+    -y, --year <year>         Tax year (default: current year)
     --pay-period <type>       Pay period (e.g. "Semi-monthly (24 pay periods a year)")
     --rrsp-employee <pct>     Employee RRSP contribution % (default: 4)
     --rrsp-employer <pct>     Employer RRSP match % (default: 4)
@@ -93,6 +95,7 @@ if (values.help) {
       "province": "Ontario",
       "annualSalary": 100000,
       "payPeriod": "Semi-monthly (24 pay periods a year)",
+      "year": 2026,
       "rrspEmployeePercent": 4,
       "rrspEmployerPercent": 4,
       "cppMaxedOut": false,
@@ -244,6 +247,14 @@ const resolveConfig = async (
   );
   if (province.isErr()) return err(province.error);
 
+  const year = await resolveField(
+    "year",
+    vals.year !== undefined ? parseInt(vals.year, 10) : undefined,
+    fileConfig.year, new Date().getFullYear(),
+    () => promptNumber("Tax year", new Date().getFullYear()), isPiped,
+  );
+  if (year.isErr()) return err(year.error);
+
   const salary = await resolveField(
     "salary",
     vals.salary !== undefined ? parseFloat(vals.salary) : undefined,
@@ -282,6 +293,7 @@ const resolveConfig = async (
     province: province.value,
     annualSalary: salary.value,
     payPeriod: payPeriod.value,
+    year: year.value,
     rrspEmployeePercent: rrspEmployee.value,
     rrspEmployerPercent: rrspEmployer.value,
     cppMaxedOut,
@@ -301,7 +313,7 @@ const runYearlyMode = async (config: PayrollConfig, headless: boolean, flags: { 
   const yearly = yearlyResult.value;
   const periodsPerYear = PAY_PERIOD_COUNTS[config.payPeriod];
 
-  if (flags.table) console.log(renderTable(yearly, periodsPerYear));
+  if (flags.table) console.log(renderTable(yearly, periodsPerYear, config.year));
   if (flags.annual) console.log(renderAnnual(yearly.totals));
   if (flags.monthly) console.log(renderMonthly(yearly.totals));
 };

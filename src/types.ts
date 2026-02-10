@@ -4,6 +4,7 @@ export interface PayrollConfig {
   province: string;
   annualSalary: number;
   payPeriod: string;
+  year: number;
   rrspEmployeePercent: number;
   rrspEmployerPercent: number;
   cppMaxedOut: boolean;

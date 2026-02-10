@@ -42,7 +42,7 @@ const fillEmployeeInfo = async (
   if (payPeriod.isErr()) return payPeriod;
   log(`pay period: ${config.payPeriod}`);
 
-  const year = await session.selectLatestYear();
+  const year = await session.selectYear(config.year);
   if (year.isErr()) return err(year.error);
   log(`year: ${year.value}`);
 
