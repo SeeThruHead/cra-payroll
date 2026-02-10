@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 import { parseArgs } from "util";
 import { resolve } from "path";
 import { existsSync, readFileSync, fstatSync } from "fs";
@@ -109,12 +109,18 @@ if (values.help) {
   process.exit(0);
 }
 
+const isCompiledBinary = !process.execPath.endsWith("node") && !process.execPath.endsWith("bun");
+
 if (values.version) {
   console.log(`cra-payroll v${currentVersion()}`);
   process.exit(0);
 }
 
 if (values.update) {
+  if (!isCompiledBinary) {
+    console.log("Self-update is only available for the standalone binary. Use `npm update -g cra-payroll` instead.");
+    process.exit(0);
+  }
   const result = await selfUpdate();
   if (result.isErr()) {
     console.error(`❌ ${result.error}`);
@@ -329,6 +335,7 @@ const runSingleMode = async (config: PayrollConfig, headless: boolean) => {
 };
 
 const showUpdateNag = async () => {
+  if (!isCompiledBinary) return;
   const updateInfo = await checkForUpdate();
   if (updateInfo.isOk() && updateInfo.value) {
     console.log(`\nUpdate available: ${updateInfo.value.tag} (current: v${currentVersion()})`);
