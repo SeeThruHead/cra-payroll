@@ -1,5 +1,6 @@
 import * as R from "remeda";
 import { money, line, when, pct } from "./format";
+import { marginalRate } from "../brackets";
 import type { YearlyResult, PayPeriodRow } from "../yearly";
 
 interface Row {
@@ -63,7 +64,7 @@ const totalsRow = (totals: YearlyResult["totals"], rrsp: boolean): Row => ({
   cumCppEi: "",
 });
 
-export const renderTable = (yearly: YearlyResult, periodsPerYear: number, year: number = 2026): string =>
+export const renderTable = (yearly: YearlyResult, periodsPerYear: number, year: number = 2026, province: string = "Ontario", annualSalary: number = 0, rrspPercent: number = 0): string =>
   R.pipe(
     yearly,
     ctx => ({ ...ctx, rrsp: showRrsp(ctx.totals) }),
@@ -80,6 +81,11 @@ export const renderTable = (yearly: YearlyResult, periodsPerYear: number, year: 
   RRSP Er:   $${money(t.rrspEmployer)}/yr ($${money(t.rrspEmployer / periodsPerYear)}/period)
   RRSP Total (You + Er): $${money(empTotal + t.rrspEmployer)}/yr`;
       const taxRate = t.grossIncome > 0 ? (t.totalDeductions / t.grossIncome) * 100 : 0;
+      const taxableIncome = annualSalary * (1 - rrspPercent / 100);
+      const mr = marginalRate(year, province, taxableIncome);
+      const marginalLine = mr.isOk()
+        ? `  Marginal tax rate:  ${pct(mr.value.combined * 100)} (fed ${pct(mr.value.federal * 100)} + prov ${pct(mr.value.provincial * 100)})`
+        : "";
       return `Per-Paycheck Table (${year})
 ${line("═", ctx.W)}
 ${ctx.header}
@@ -88,6 +94,6 @@ ${ctx.bodyRows.join("\n")}
 ${line("─", ctx.W)}
 ${ctx.totalsStr}
 ${line("═", ctx.W)}
-  Effective tax rate: ${pct(taxRate)}${rrspSummary}`;
+  Effective tax rate: ${pct(taxRate)}${marginalLine ? `\n${marginalLine}` : ""}${rrspSummary}`;
     },
   );

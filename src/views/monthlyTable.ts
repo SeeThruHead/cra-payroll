@@ -1,5 +1,6 @@
 import * as R from "remeda";
 import { money, line, when, pct } from "./format";
+import { marginalRate } from "../brackets";
 import type { MonthlyResult, MonthlyRow } from "../monthly";
 
 interface Row {
@@ -52,7 +53,7 @@ const totalsRow = (totals: MonthlyResult["totals"], rrsp: boolean): Row => ({
   ...rrspFields(rrsp, { rrspYou: totalEmployeeRrspTotals(totals), rrspEr: totals.rrspEmployer, takeHome: totals.netPay - totalEmployeeRrspTotals(totals) }),
 });
 
-export const renderMonthlyTable = (monthly: MonthlyResult, year: number = 2026): string =>
+export const renderMonthlyTable = (monthly: MonthlyResult, year: number = 2026, province: string = "Ontario", annualSalary: number = 0, rrspPercent: number = 0): string =>
   R.pipe(
     monthly,
     ctx => ({ ...ctx, rrsp: showRrsp(ctx.totals) }),
@@ -69,6 +70,11 @@ export const renderMonthlyTable = (monthly: MonthlyResult, year: number = 2026):
   RRSP Er:   $${money(t.rrspEmployer)}/yr
   RRSP Total (You + Er): $${money(empTotal + t.rrspEmployer)}/yr`;
       const taxRate = t.grossIncome > 0 ? (t.totalDeductions / t.grossIncome) * 100 : 0;
+      const taxableIncome = annualSalary * (1 - rrspPercent / 100);
+      const mr = marginalRate(year, province, taxableIncome);
+      const marginalLine = mr.isOk()
+        ? `  Marginal tax rate:  ${pct(mr.value.combined * 100)} (fed ${pct(mr.value.federal * 100)} + prov ${pct(mr.value.provincial * 100)})`
+        : "";
       return `Monthly Table (${year})
 ${line("═", ctx.W)}
 ${ctx.header}
@@ -77,6 +83,6 @@ ${ctx.bodyRows.join("\n")}
 ${line("─", ctx.W)}
 ${ctx.totalsStr}
 ${line("═", ctx.W)}
-  Effective tax rate: ${pct(taxRate)}${rrspSummary}`;
+  Effective tax rate: ${pct(taxRate)}${marginalLine ? `\n${marginalLine}` : ""}${rrspSummary}`;
     },
   );

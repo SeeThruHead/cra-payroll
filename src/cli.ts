@@ -325,10 +325,11 @@ const runYearlyMode = async (config: PayrollConfig, headless: boolean, svc: type
   const yearly = yearlyResult.value;
   const periodsPerYear = PAY_PERIOD_COUNTS[config.payPeriod];
 
-  if (flags.table) console.log(renderTable(yearly, periodsPerYear, config.year));
+  const rrspPercent = config.rrspMatchPercent + config.rrspUnmatchedPercent;
+  if (flags.table) console.log(renderTable(yearly, periodsPerYear, config.year, config.province, config.annualSalary, rrspPercent));
   if (flags.monthTable) {
     const monthly = groupByMonth(yearly, config.year, config.payPeriod, periodsPerYear);
-    console.log(renderMonthlyTable(monthly, config.year));
+    console.log(renderMonthlyTable(monthly, config.year, config.province, config.annualSalary, rrspPercent));
   }
   if (flags.annual) console.log(renderAnnual(yearly.totals));
   if (flags.monthly) console.log(renderMonthly(yearly.totals));
