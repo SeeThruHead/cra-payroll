@@ -1,5 +1,5 @@
 import * as R from "remeda";
-import { money, line, when } from "./format";
+import { money, line, when, pct } from "./format";
 import type { YearlyResult, PayPeriodRow } from "../yearly";
 
 interface Row {
@@ -79,6 +79,7 @@ export const renderTable = (yearly: YearlyResult, periodsPerYear: number, year: 
   t.rrspUnmatched > 0 ? `  — unmatched: $${money(t.rrspUnmatched)}/yr` : ""}
   RRSP Er:   $${money(t.rrspEmployer)}/yr ($${money(t.rrspEmployer / periodsPerYear)}/period)
   RRSP Total (You + Er): $${money(empTotal + t.rrspEmployer)}/yr`;
+      const taxRate = t.grossIncome > 0 ? (t.totalDeductions / t.grossIncome) * 100 : 0;
       return `Per-Paycheck Table (${year})
 ${line("═", ctx.W)}
 ${ctx.header}
@@ -86,6 +87,7 @@ ${line("─", ctx.W)}
 ${ctx.bodyRows.join("\n")}
 ${line("─", ctx.W)}
 ${ctx.totalsStr}
-${line("═", ctx.W)}${rrspSummary}`;
+${line("═", ctx.W)}
+  Effective tax rate: ${pct(taxRate)}${rrspSummary}`;
     },
   );

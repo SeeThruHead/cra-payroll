@@ -6,3 +6,5 @@ export const money = (n: number) =>
 export const line = (ch: string, width: number) => ch.repeat(width);
 
 export const when = (cond: unknown, s: string) => cond ? `\n${s}` : "";
+
+export const pct = (n: number) => `${n.toFixed(1)}%`;
