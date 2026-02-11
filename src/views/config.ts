@@ -9,8 +9,8 @@ Province:          ${config.province}
 Year:              ${config.year}
 Annual Salary:     $${money(config.annualSalary)}
 Pay Period:        ${config.payPeriod}
-RRSP (Employee):   ${config.rrspEmployeePercent}%
-RRSP (Employer):   ${config.rrspEmployerPercent}%${
+RRSP (Matched):    ${config.rrspMatchPercent}%${
+config.rrspUnmatchedPercent > 0 ? `\nRRSP (Unmatched):  ${config.rrspUnmatchedPercent}%` : ""}${
 when(showCppEi, `CPP Maxed Out:     ${config.cppMaxedOut ? "Yes" : "No"}\nEI Maxed Out:      ${config.eiMaxedOut ? "Yes" : "No"}`)}
 ${line("─", 40)}
 Calculating via CRA PDOC...

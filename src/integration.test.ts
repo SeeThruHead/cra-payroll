@@ -12,8 +12,8 @@ const BASE: PayrollConfig = {
   annualSalary: 100_000,
   payPeriod: "Semi-monthly (24 pay periods a year)",
   year: 2026,
-  rrspEmployeePercent: 0,
-  rrspEmployerPercent: 0,
+  rrspMatchPercent: 0,
+  rrspUnmatchedPercent: 0,
   cppMaxedOut: false,
   eiMaxedOut: false,
 };
@@ -73,9 +73,9 @@ describe("CRA integration", () => {
   }, 10_000);
 
   test("RRSP contributions reduce taxes vs base case", async () => {
-    const r = unwrap(await calculatePayroll(cfg({ rrspEmployeePercent: 4, rrspEmployerPercent: 4 }), HEADLESS));
+    const r = unwrap(await calculatePayroll(cfg({ rrspMatchPercent: 4 }), HEADLESS));
 
-    expect(r.rrspEmployee).toBeCloseTo(166.67, 2);
+    expect(r.rrspMatched).toBeCloseTo(166.67, 2);
     expect(r.rrspEmployer).toBeCloseTo(166.67, 2);
     // Base case without RRSP: federal ~585, provincial ~289
     // RRSP reduces taxable income, so taxes should be noticeably lower

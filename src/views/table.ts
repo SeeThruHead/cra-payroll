@@ -23,8 +23,11 @@ const col = (v: number | string, w: number) =>
 const renderRow = (r: Row): string =>
   `${r.label} │ ${col(r.gross, 10)} │ ${col(r.fedTax, 10)} │ ${col(r.provTax, 10)} │ ${col(r.cpp, 10)} │ ${col(r.cpp2, 6)} │ ${col(r.ei, 10)} │ ${col(r.netPay, 10)}${r.rrspEmp !== undefined ? ` │ ${col(r.rrspEmp, 10)} │ ${col(r.takeHome!, 10)}` : ""} │ ${col(r.cumCppEi, 10)}${r.suffix ?? ""}`;
 
+const totalEmployeeRrsp = (r: PayPeriodRow) => r.rrspMatched + r.rrspUnmatched;
+const totalEmployeeRrspTotals = (t: YearlyResult["totals"]) => t.rrspMatched + t.rrspUnmatched;
+
 const showRrsp = (totals: YearlyResult["totals"]) =>
-  totals.rrspEmployee > 0 || totals.rrspEmployer > 0;
+  totals.rrspMatched > 0 || totals.rrspUnmatched > 0 || totals.rrspEmployer > 0;
 
 const rrspFields = (show: boolean, fields: Record<string, number | string>) =>
   show ? fields : {};
@@ -38,7 +41,7 @@ const toRow = (r: PayPeriodRow, first: PayPeriodRow, rrsp: boolean): Row => ({
   label: ` ${String(r.period).padStart(3)} `,
   gross: r.grossIncome, fedTax: r.federalTax, provTax: r.provincialTax,
   cpp: r.cpp, cpp2: r.cpp2, ei: r.ei, netPay: r.netPay,
-  ...rrspFields(rrsp, { rrspEmp: r.rrspEmployee, takeHome: r.netPay - r.rrspEmployee }),
+  ...rrspFields(rrsp, { rrspEmp: totalEmployeeRrsp(r), takeHome: r.netPay - totalEmployeeRrsp(r) }),
   cumCppEi: r.cumulativeCpp + r.cumulativeCpp2 + r.cumulativeEi,
   suffix: annotate(r, first),
 });
@@ -55,7 +58,7 @@ const totalsRow = (totals: YearlyResult["totals"], rrsp: boolean): Row => ({
   label: " TOT ",
   gross: totals.grossIncome, fedTax: totals.federalTax, provTax: totals.provincialTax,
   cpp: totals.cpp, cpp2: totals.cpp2, ei: totals.ei, netPay: totals.netPay,
-  ...rrspFields(rrsp, { rrspEmp: totals.rrspEmployee, takeHome: totals.netPay - totals.rrspEmployee }),
+  ...rrspFields(rrsp, { rrspEmp: totalEmployeeRrspTotals(totals), takeHome: totals.netPay - totalEmployeeRrspTotals(totals) }),
   cumCppEi: "",
 });
 

@@ -20,8 +20,8 @@ const BASE_CONFIG: PayrollConfig = {
   annualSalary: 100_000,
   payPeriod: "Semi-monthly (24 pay periods a year)",
   year: 2026,
-  rrspEmployeePercent: 4,
-  rrspEmployerPercent: 4,
+  rrspMatchPercent: 4,
+  rrspUnmatchedPercent: 0,
   cppMaxedOut: false,
   eiMaxedOut: false,
 };
@@ -29,7 +29,8 @@ const BASE_CONFIG: PayrollConfig = {
 // Realistic CRA-like results for $100k Ontario semi-monthly
 const ACTIVE_RESULT: PayrollResult = {
   grossIncome: 4166.67,
-  rrspEmployee: 166.67,
+  rrspMatched: 166.67,
+  rrspUnmatched: 0,
   rrspEmployer: 166.67,
   federalTax: 521.11,
   provincialTax: 264.24,
@@ -83,15 +84,29 @@ Net amount 3,064.24
     const result = parseResults(sampleText, BASE_CONFIG, 24);
     const r = result._unsafeUnwrap();
     // 100000 * 0.04 / 24 = 166.67
-    expect(r.rrspEmployee).toBeCloseTo(166.67, 2);
+    expect(r.rrspMatched).toBeCloseTo(166.67, 2);
+    expect(r.rrspEmployer).toBeCloseTo(166.67, 2);
+    expect(r.rrspUnmatched).toBe(0);
+  });
+
+  test("calculates unmatched RRSP from config", () => {
+    const config = { ...BASE_CONFIG, rrspUnmatchedPercent: 2 };
+    const result = parseResults(sampleText, config, 24);
+    const r = result._unsafeUnwrap();
+    // 100000 * 0.04 / 24 = 166.67
+    expect(r.rrspMatched).toBeCloseTo(166.67, 2);
+    // 100000 * 0.02 / 24 = 83.33
+    expect(r.rrspUnmatched).toBeCloseTo(83.33, 2);
+    // employer only matches the matched portion
     expect(r.rrspEmployer).toBeCloseTo(166.67, 2);
   });
 
   test("handles zero RRSP", () => {
-    const config = { ...BASE_CONFIG, rrspEmployeePercent: 0, rrspEmployerPercent: 0 };
+    const config = { ...BASE_CONFIG, rrspMatchPercent: 0, rrspUnmatchedPercent: 0 };
     const result = parseResults(sampleText, config, 24);
     const r = result._unsafeUnwrap();
-    expect(r.rrspEmployee).toBe(0);
+    expect(r.rrspMatched).toBe(0);
+    expect(r.rrspUnmatched).toBe(0);
     expect(r.rrspEmployer).toBe(0);
   });
 
@@ -126,7 +141,7 @@ Net amount 6,446.34
     }, 26);
     const r = result._unsafeUnwrap();
     // 100000 * 0.04 / 26 = 153.85
-    expect(r.rrspEmployee).toBeCloseTo(153.85, 2);
+    expect(r.rrspMatched).toBeCloseTo(153.85, 2);
   });
 });
 
@@ -231,6 +246,25 @@ describe("buildYearlyTable", () => {
     expect(result.totals.grossIncome).toBeCloseTo(sumGross, 2);
     const sumNet = result.rows.reduce((s, r) => s + r.netPay, 0);
     expect(result.totals.netPay).toBeCloseTo(sumNet, 2);
+  });
+
+  test("unmatched RRSP flows through to rows and totals", () => {
+    const activeWithUnmatched: PayrollResult = {
+      ...ACTIVE_RESULT,
+      rrspUnmatched: 83.33,
+    };
+    const maxedWithUnmatched: PayrollResult = {
+      ...MAXED_RESULT,
+      rrspUnmatched: 83.33,
+    };
+    const config = { ...BASE_CONFIG, rrspUnmatchedPercent: 2 };
+    const result = buildYearlyTable(activeWithUnmatched, maxedWithUnmatched, config, 24);
+    expect(result.rows[0].rrspUnmatched).toBe(83.33);
+    expect(result.rows[0].rrspMatched).toBe(166.67);
+    expect(result.totals.rrspUnmatched).toBeCloseTo(83.33 * 24, 2);
+    expect(result.totals.rrspMatched).toBeCloseTo(166.67 * 24, 2);
+    // employer only matches the matched portion
+    expect(result.totals.rrspEmployer).toBeCloseTo(166.67 * 24, 2);
   });
 
   test("high earner maxes out early", () => {

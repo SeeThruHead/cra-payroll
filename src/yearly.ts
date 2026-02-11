@@ -11,7 +11,8 @@ export { PAY_PERIODS as PAY_PERIOD_COUNTS } from "./types";
 export interface PayPeriodRow {
   period: number;
   grossIncome: number;
-  rrspEmployee: number;
+  rrspMatched: number;
+  rrspUnmatched: number;
   rrspEmployer: number;
   federalTax: number;
   provincialTax: number;
@@ -29,7 +30,8 @@ export interface YearlyResult {
   rows: PayPeriodRow[];
   totals: {
     grossIncome: number;
-    rrspEmployee: number;
+    rrspMatched: number;
+    rrspUnmatched: number;
     rrspEmployer: number;
     federalTax: number;
     provincialTax: number;
@@ -90,7 +92,8 @@ const buildRow = (period: number, active: PayrollResult, maxed: PayrollResult, c
       row: {
         period,
         grossIncome: active.grossIncome,
-        rrspEmployee: active.rrspEmployee,
+        rrspMatched: active.rrspMatched,
+        rrspUnmatched: active.rrspUnmatched,
         rrspEmployer: active.rrspEmployer,
         ...taxes, ...ded,
         totalDeductions: totalDed,
@@ -107,9 +110,10 @@ const sumField = (rows: PayPeriodRow[], field: keyof PayPeriodRow) =>
   round2(R.sumBy(rows, r => r[field]));
 
 const sumTotals = (rows: PayPeriodRow[]): YearlyResult["totals"] => ({
-  grossIncome:    sumField(rows, "grossIncome"),
-  rrspEmployee:   sumField(rows, "rrspEmployee"),
-  rrspEmployer:   sumField(rows, "rrspEmployer"),
+  grossIncome:   sumField(rows, "grossIncome"),
+  rrspMatched:   sumField(rows, "rrspMatched"),
+  rrspUnmatched: sumField(rows, "rrspUnmatched"),
+  rrspEmployer:  sumField(rows, "rrspEmployer"),
   federalTax:     sumField(rows, "federalTax"),
   provincialTax:  sumField(rows, "provincialTax"),
   cpp:            sumField(rows, "cpp"),

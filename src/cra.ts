@@ -72,7 +72,7 @@ const fillSalaryInfo = async (
   if (salary.isErr()) return salary;
   log(`salary: ${salaryPerPeriod}/period`);
 
-  if (config.rrspEmployerPercent > 0) {
+  if (config.rrspMatchPercent > 0) {
     log("setting employer RRSP...");
     const check = await session.checkCheckboxByLabel("Employer's contributions to the employee's RRSP");
     if (check.isErr()) log(`employer RRSP checkbox warning: ${check.error}`);
@@ -82,7 +82,7 @@ const fillSalaryInfo = async (
     else log(`employer RRSP: ${rrspEmployerPerPeriod}/period`);
   }
 
-  if (config.rrspEmployeePercent > 0) {
+  if (parseFloat(rrspEmployeePerPeriod) > 0) {
     log("setting employee RRSP...");
     const check = await session.checkCheckboxByLabel("Employee's contributions to RRSPs or RPPs or PRPPs");
     if (check.isErr()) log(`employee RRSP checkbox warning: ${check.error}`);
@@ -168,8 +168,9 @@ export const calculatePayroll = async (
   if (!periodsPerYear) return err(`Unknown pay period: "${config.payPeriod}"`);
 
   const salaryPerPeriod = (config.annualSalary / periodsPerYear).toFixed(2);
-  const rrspEmployeePerPeriod = ((config.annualSalary * (config.rrspEmployeePercent / 100)) / periodsPerYear).toFixed(2);
-  const rrspEmployerPerPeriod = ((config.annualSalary * (config.rrspEmployerPercent / 100)) / periodsPerYear).toFixed(2);
+  const totalEmployeeRrspPercent = config.rrspMatchPercent + config.rrspUnmatchedPercent;
+  const rrspEmployeePerPeriod = ((config.annualSalary * (totalEmployeeRrspPercent / 100)) / periodsPerYear).toFixed(2);
+  const rrspEmployerPerPeriod = ((config.annualSalary * (config.rrspMatchPercent / 100)) / periodsPerYear).toFixed(2);
 
   const sessionResult = await launchSession(headless);
   if (sessionResult.isErr()) return err(sessionResult.error);

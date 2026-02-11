@@ -54,7 +54,8 @@ export const parseResults = (
             ei:              values.ei ?? 0,
             totalDeductions: values.totalDeductions ?? 0,
             net:             values.net ?? 0,
-            rrspEmployee:    rrspPerPeriod(config.annualSalary, config.rrspEmployeePercent, periodsPerYear),
-            rrspEmployer:    rrspPerPeriod(config.annualSalary, config.rrspEmployerPercent, periodsPerYear),
+            rrspMatched:     rrspPerPeriod(config.annualSalary, config.rrspMatchPercent, periodsPerYear),
+            rrspUnmatched:   rrspPerPeriod(config.annualSalary, config.rrspUnmatchedPercent, periodsPerYear),
+            rrspEmployer:    rrspPerPeriod(config.annualSalary, config.rrspMatchPercent, periodsPerYear),
           }),
   );

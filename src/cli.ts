@@ -46,8 +46,8 @@ const { values } = parseArgs({
     province: { type: "string", short: "p" },
     "pay-period": { type: "string" },
     year: { type: "string", short: "y" },
-    "rrsp-employee": { type: "string" },
-    "rrsp-employer": { type: "string" },
+    "rrsp-match": { type: "string" },
+    "rrsp-unmatched": { type: "string" },
     "cpp-maxed": { type: "boolean", default: false },
     "ei-maxed": { type: "boolean", default: false },
     table: { type: "boolean", short: "t", default: false },
@@ -77,8 +77,8 @@ if (values.help) {
     -p, --province <name>     Province of employment
     -y, --year <year>         Tax year (default: current year)
     --pay-period <type>       Pay period (e.g. "Semi-monthly (24 pay periods a year)")
-    --rrsp-employee <pct>     Employee RRSP contribution % (default: 4)
-    --rrsp-employer <pct>     Employer RRSP match % (default: 4)
+    --rrsp-match <pct>        RRSP match % (employee + employer both contribute this, default: 4)
+    --rrsp-unmatched <pct>    Additional unmatched employee RRSP % (default: 0)
     --cpp-maxed               CPP contributions maxed out for the year
     --ei-maxed                EI premiums maxed out for the year
     -t, --table               Show per-paycheck table for the year (tracks CPP/EI max)
@@ -96,8 +96,8 @@ if (values.help) {
       "annualSalary": 100000,
       "payPeriod": "Semi-monthly (24 pay periods a year)",
       "year": 2026,
-      "rrspEmployeePercent": 4,
-      "rrspEmployerPercent": 4,
+      "rrspMatchPercent": 4,
+      "rrspUnmatchedPercent": 0,
       "cppMaxedOut": false,
       "eiMaxedOut": false
     }
@@ -276,21 +276,21 @@ const resolveConfig = async (
   );
   if (payPeriod.isErr()) return err(payPeriod.error);
 
-  const rrspEmployee = await resolveField(
-    "rrsp-employee",
-    vals["rrsp-employee"] !== undefined ? parseFloat(vals["rrsp-employee"]) : undefined,
-    fileConfig.rrspEmployeePercent, 4,
-    () => promptNumber("Employee RRSP contribution (%)", 4), isPiped,
+  const rrspMatch = await resolveField(
+    "rrsp-match",
+    vals["rrsp-match"] !== undefined ? parseFloat(vals["rrsp-match"]) : undefined,
+    fileConfig.rrspMatchPercent, 4,
+    () => promptNumber("RRSP match % (employee + employer both contribute)", 4), isPiped,
   );
-  if (rrspEmployee.isErr()) return err(rrspEmployee.error);
+  if (rrspMatch.isErr()) return err(rrspMatch.error);
 
-  const rrspEmployer = await resolveField(
-    "rrsp-employer",
-    vals["rrsp-employer"] !== undefined ? parseFloat(vals["rrsp-employer"]) : undefined,
-    fileConfig.rrspEmployerPercent, 4,
-    () => promptNumber("Employer RRSP match (%)", 4), isPiped,
+  const rrspUnmatched = await resolveField(
+    "rrsp-unmatched",
+    vals["rrsp-unmatched"] !== undefined ? parseFloat(vals["rrsp-unmatched"]) : undefined,
+    fileConfig.rrspUnmatchedPercent, 0,
+    () => promptNumber("Additional unmatched employee RRSP %", 0), isPiped,
   );
-  if (rrspEmployer.isErr()) return err(rrspEmployer.error);
+  if (rrspUnmatched.isErr()) return err(rrspUnmatched.error);
 
   const cppMaxedOut = vals["cpp-maxed"] === true ? true : (fileConfig.cppMaxedOut ?? false);
   const eiMaxedOut = vals["ei-maxed"] === true ? true : (fileConfig.eiMaxedOut ?? false);
@@ -300,8 +300,8 @@ const resolveConfig = async (
     annualSalary: salary.value,
     payPeriod: payPeriod.value,
     year: year.value,
-    rrspEmployeePercent: rrspEmployee.value,
-    rrspEmployerPercent: rrspEmployer.value,
+    rrspMatchPercent: rrspMatch.value,
+    rrspUnmatchedPercent: rrspUnmatched.value,
     cppMaxedOut,
     eiMaxedOut,
   });

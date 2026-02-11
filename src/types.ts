@@ -5,15 +5,16 @@ export interface PayrollConfig {
   annualSalary: number;
   payPeriod: string;
   year: number;
-  rrspEmployeePercent: number;
-  rrspEmployerPercent: number;
+  rrspMatchPercent: number;
+  rrspUnmatchedPercent: number;
   cppMaxedOut: boolean;
   eiMaxedOut: boolean;
 }
 
 export interface PayrollResult {
   grossIncome: number;
-  rrspEmployee: number;
+  rrspMatched: number;
+  rrspUnmatched: number;
   rrspEmployer: number;
   federalTax: number;
   provincialTax: number;

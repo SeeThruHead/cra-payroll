@@ -9,11 +9,13 @@ const renderBreakdown = (
   divisor: number = 1,
 ): string => {
   const f = (n: number) => money(n / divisor).padStart(10);
+  const totalEmployeeRrsp = totals.rrspMatched + totals.rrspUnmatched;
   return `
 ${label}
 ${line("═", W)}
   Gross Income:       $${f(totals.grossIncome)}${
-  when(totals.rrspEmployee, `  RRSP (Employee):   -$${f(totals.rrspEmployee)}`)}${
+  when(totals.rrspMatched, `  RRSP (Matched):    -$${f(totals.rrspMatched)}`)}${
+  when(totals.rrspUnmatched, `  RRSP (Unmatched):  -$${f(totals.rrspUnmatched)}`)}${
   when(totals.rrspEmployer && divisor === 1, `  RRSP (Employer):   -$${f(totals.rrspEmployer)}`)}
 ${line("─", W)}
   Federal Tax:       -$${f(totals.federalTax)}
@@ -25,7 +27,7 @@ ${line("─", W)}
   Total Deductions:  -$${f(totals.totalDeductions)}
 ${line("═", W)}
   Net Pay:             $${f(totals.netPay)}${
-  when(totals.rrspEmployee, `     (after RRSP):     $${money((totals.netPay - totals.rrspEmployee) / divisor).padStart(10)}`)}`;
+  when(totalEmployeeRrsp, `     (after RRSP):     $${money((totals.netPay - totalEmployeeRrsp) / divisor).padStart(10)}`)}`;
 };
 
 export const renderAnnual = (totals: YearlyResult["totals"]): string =>
