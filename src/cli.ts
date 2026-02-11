@@ -4,7 +4,7 @@ import { resolve } from "path";
 import { existsSync, readFileSync, fstatSync } from "fs";
 import { createInterface } from "readline";
 import { ok, err, type Result } from "neverthrow";
-import { calculatePayroll, setVerbose, craService, type PayrollConfig } from "./calculator";
+import { setVerbose, craService, craServiceNoCache, type PayrollConfig } from "./calculator";
 import { calculateYearly, PAY_PERIOD_COUNTS } from "./yearly";
 import { checkForUpdate, selfUpdate, currentVersion } from "./updater";
 import { renderConfig } from "./views/config";
@@ -53,6 +53,7 @@ const { values } = parseArgs({
     table: { type: "boolean", short: "t", default: false },
     annual: { type: "boolean", short: "a", default: false },
     monthly: { type: "boolean", short: "m", default: false },
+    "no-cache": { type: "boolean", default: false },
     update: { type: "boolean", default: false },
     version: { type: "boolean", default: false },
     headless: { type: "boolean", default: false },
@@ -84,6 +85,7 @@ if (values.help) {
     -t, --table               Show per-paycheck table for the year (tracks CPP/EI max)
     -a, --annual              Show annualized totals
     -m, --monthly             Show monthly averages
+    --no-cache                Skip cache and force a fresh CRA lookup
     --headless                Run browser headless (may be blocked by CRA)
     --update                  Self-update to the latest release
     --version                 Show current version
@@ -309,8 +311,8 @@ const resolveConfig = async (
 
 // ── Run ──────────────────────────────────────────────────────
 
-const runYearlyMode = async (config: PayrollConfig, headless: boolean, flags: { table: boolean; annual: boolean; monthly: boolean }) => {
-  const yearlyResult = await calculateYearly(craService, config, headless);
+const runYearlyMode = async (config: PayrollConfig, headless: boolean, svc: typeof craService, flags: { table: boolean; annual: boolean; monthly: boolean }) => {
+  const yearlyResult = await calculateYearly(svc, config, headless);
   if (yearlyResult.isErr()) {
     console.error(`Error: ${yearlyResult.error}`);
     process.exit(1);
@@ -324,8 +326,8 @@ const runYearlyMode = async (config: PayrollConfig, headless: boolean, flags: { 
   if (flags.monthly) console.log(renderMonthly(yearly.totals));
 };
 
-const runSingleMode = async (config: PayrollConfig, headless: boolean) => {
-  const calcResult = await calculatePayroll(config, headless);
+const runSingleMode = async (config: PayrollConfig, headless: boolean, svc: typeof craService) => {
+  const calcResult = await svc.calculate(config, headless);
   if (calcResult.isErr()) {
     console.error(`Error: ${calcResult.error}`);
     process.exit(1);
@@ -363,6 +365,7 @@ if (configResult.isErr()) {
 
 const config = configResult.value;
 const headless = values.headless ?? false;
+const service = values["no-cache"] ? craServiceNoCache : craService;
 if (values.verbose) setVerbose(true);
 
 const wantTable = values.table ?? false;
@@ -372,9 +375,9 @@ const wantMonthly = values.monthly ?? false;
 console.log(renderConfig(config, !wantTable && !wantAnnual && !wantMonthly));
 
 if (wantTable || wantAnnual || wantMonthly) {
-  await runYearlyMode(config, headless, { table: wantTable, annual: wantAnnual, monthly: wantMonthly });
+  await runYearlyMode(config, headless, service, { table: wantTable, annual: wantAnnual, monthly: wantMonthly });
 } else {
-  await runSingleMode(config, headless);
+  await runSingleMode(config, headless, service);
 }
 
 await showUpdateNag();
