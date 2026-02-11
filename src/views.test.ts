@@ -77,6 +77,15 @@ describe("renderTable", () => {
     expect(rate).toBeLessThan(40);
   });
 
+  test("tax rate reflects totalDeductions / gross", () => {
+    const yearly = buildYearlyTable(ACTIVE, MAXED, CONFIG, 24);
+    const output = renderTable(yearly, 24, 2026);
+    const match = output.match(/Effective tax rate: ([\d.]+)%/);
+    const rate = parseFloat(match![1]);
+    const expected = (yearly.totals.totalDeductions / yearly.totals.grossIncome) * 100;
+    expect(rate).toBeCloseTo(expected, 0);
+  });
+
   test("includes RRSP summary when RRSP configured", () => {
     const yearly = buildYearlyTable(ACTIVE, MAXED, CONFIG, 24);
     const output = renderTable(yearly, 24, 2026);
@@ -93,7 +102,6 @@ describe("renderTable", () => {
     expect(output).not.toContain("RRSP You");
     expect(output).not.toContain("RRSP Er");
     expect(output).not.toContain("Take Home");
-    // Tax rate should still be there
     expect(output).toContain("Effective tax rate:");
   });
 });
