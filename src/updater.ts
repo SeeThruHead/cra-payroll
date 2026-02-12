@@ -47,7 +47,7 @@ export const checkForUpdate = async (): Promise<Result<ReleaseInfo | null, strin
     const latestTag = data.tag_name;
     const latestVersion = latestTag.replace(/^v/, "");
 
-    if (!isNewer(latestVersion, VERSION)) return ok(null);
+    if (!isNewer(latestVersion, currentVersion())) return ok(null);
 
     const target = getTarget();
     if (target.isErr()) return ok(null);
@@ -95,7 +95,7 @@ const doUpdate = (binaryPath: string, update: ReleaseInfo): Result<string, strin
 };
 
 export const selfUpdate = async (): Promise<Result<string, string>> => {
-  console.log(`Current version: v${VERSION}`);
+  console.log(`Current version: v${currentVersion()}`);
   console.log("Checking for updates...\n");
 
   const updateResult = await checkForUpdate();
@@ -103,10 +103,10 @@ export const selfUpdate = async (): Promise<Result<string, string>> => {
 
   const update = updateResult.value;
   if (!update) {
-    return ok(`Already on the latest version (v${VERSION})`);
+    return ok(`Already on the latest version (v${currentVersion()})`);
   }
 
-  console.log(`New version available: ${update.tag} (current: v${VERSION})`);
+  console.log(`New version available: ${update.tag} (current: v${currentVersion()})`);
   console.log(`Downloading ${update.downloadUrl}...\n`);
 
   let binaryPath = "";

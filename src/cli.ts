@@ -38,33 +38,78 @@ const PAY_PERIODS = [
   "Monthly (12 pay periods a year)",
 ];
 
+// ── Signal handling ───────────────────────────────────────────
+
+process.on("SIGINT", () => {
+  console.error("\nInterrupted.");
+  process.exit(130);
+});
+
 // ── Arg parsing ──────────────────────────────────────────────
 
-const { values } = parseArgs({
-  args: process.argv.slice(2),
+let values: ReturnType<typeof parseArgs<{
   options: {
-    config: { type: "string", short: "c", default: "" },
-    salary: { type: "string", short: "s" },
-    province: { type: "string", short: "p" },
-    "pay-period": { type: "string" },
-    year: { type: "string", short: "y" },
-    "rrsp-match": { type: "string" },
-    "rrsp-unmatched": { type: "string" },
-    "cpp-maxed": { type: "boolean", default: false },
-    "ei-maxed": { type: "boolean", default: false },
-    table: { type: "boolean", short: "t", default: false },
-    "month-table": { type: "boolean", short: "M", default: false },
-    annual: { type: "boolean", short: "a", default: false },
-    monthly: { type: "boolean", short: "m", default: false },
-    "no-cache": { type: "boolean", default: false },
-    update: { type: "boolean", default: false },
-    version: { type: "boolean", default: false },
-    headless: { type: "boolean", default: false },
-    verbose: { type: "boolean", short: "v", default: false },
-    help: { type: "boolean", short: "h", default: false },
-  },
-  strict: true,
-});
+    config: { type: "string"; short: "c"; default: "" };
+    salary: { type: "string"; short: "s" };
+    province: { type: "string"; short: "p" };
+    "pay-period": { type: "string" };
+    year: { type: "string"; short: "y" };
+    "rrsp-match": { type: "string" };
+    "rrsp-unmatched": { type: "string" };
+    "cpp-maxed": { type: "boolean"; default: false };
+    "ei-maxed": { type: "boolean"; default: false };
+    table: { type: "boolean"; short: "t"; default: false };
+    "month-table": { type: "boolean"; short: "M"; default: false };
+    annual: { type: "boolean"; short: "a"; default: false };
+    monthly: { type: "boolean"; short: "m"; default: false };
+    "no-cache": { type: "boolean"; default: false };
+    update: { type: "boolean"; default: false };
+    version: { type: "boolean"; default: false };
+    headless: { type: "boolean"; default: false };
+    verbose: { type: "boolean"; short: "v"; default: false };
+    help: { type: "boolean"; short: "h"; default: false };
+  };
+  strict: true;
+}>>["values"];
+
+try {
+  ({ values } = parseArgs({
+    args: process.argv.slice(2),
+    options: {
+      config: { type: "string", short: "c", default: "" },
+      salary: { type: "string", short: "s" },
+      province: { type: "string", short: "p" },
+      "pay-period": { type: "string" },
+      year: { type: "string", short: "y" },
+      "rrsp-match": { type: "string" },
+      "rrsp-unmatched": { type: "string" },
+      "cpp-maxed": { type: "boolean", default: false },
+      "ei-maxed": { type: "boolean", default: false },
+      table: { type: "boolean", short: "t", default: false },
+      "month-table": { type: "boolean", short: "M", default: false },
+      annual: { type: "boolean", short: "a", default: false },
+      monthly: { type: "boolean", short: "m", default: false },
+      "no-cache": { type: "boolean", default: false },
+      update: { type: "boolean", default: false },
+      version: { type: "boolean", default: false },
+      headless: { type: "boolean", default: false },
+      verbose: { type: "boolean", short: "v", default: false },
+      help: { type: "boolean", short: "h", default: false },
+    },
+    strict: true,
+  }));
+} catch (e: any) {
+  if (e.code === "ERR_PARSE_ARGS_UNEXPECTED_POSITIONAL") {
+    const arg = e.message.match(/Unexpected argument '([^']+)'/)?.[1];
+    console.error(`❌ Unexpected argument '${arg}'. Did you mean '--${arg}'?`);
+  } else if (e.code === "ERR_PARSE_ARGS_UNKNOWN_OPTION") {
+    const opt = e.message.match(/Unknown option '([^']+)'/)?.[1];
+    console.error(`❌ Unknown option '${opt}'. Run 'cra-payroll --help' for usage.`);
+  } else {
+    console.error(`❌ ${e.message}`);
+  }
+  process.exit(1);
+}
 
 if (values.help) {
   console.log(`
