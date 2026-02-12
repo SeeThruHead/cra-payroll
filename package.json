@@ -1,6 +1,6 @@
 {
   "name": "@seethruhead/cra-payroll",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Calculate Canadian payroll deductions using CRA's Payroll Deductions Online Calculator",
   "type": "module",
   "bin": {
