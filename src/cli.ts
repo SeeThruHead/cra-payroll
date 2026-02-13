@@ -13,6 +13,7 @@ import { renderTable } from "./views/table";
 import { renderMonthlyTable } from "./views/monthlyTable";
 import { groupByMonth } from "./monthly";
 import { renderAnnual, renderMonthly } from "./views/summary";
+import { buildJsonOutput, type JsonOutputMode } from "./views/json";
 
 const PROVINCES = [
   "Alberta",
@@ -62,6 +63,7 @@ let values: ReturnType<typeof parseArgs<{
     "month-table": { type: "boolean"; short: "M"; default: false };
     annual: { type: "boolean"; short: "a"; default: false };
     monthly: { type: "boolean"; short: "m"; default: false };
+    json: { type: "boolean"; default: false };
     "no-cache": { type: "boolean"; default: false };
     update: { type: "boolean"; default: false };
     version: { type: "boolean"; default: false };
@@ -89,6 +91,7 @@ try {
       "month-table": { type: "boolean", short: "M", default: false },
       annual: { type: "boolean", short: "a", default: false },
       monthly: { type: "boolean", short: "m", default: false },
+      json: { type: "boolean", default: false },
       "no-cache": { type: "boolean", default: false },
       update: { type: "boolean", default: false },
       version: { type: "boolean", default: false },
@@ -134,6 +137,7 @@ if (values.help) {
     -M, --month-table         Show monthly table for the year
     -a, --annual              Show annualized totals
     -m, --monthly             Show monthly averages
+    --json                    Output results as JSON (works with -t, -M, -a, -m, or single)
     --no-cache                Skip cache and force a fresh CRA lookup
     --headless                Run browser headless (may be blocked by CRA)
     --update                  Self-update to the latest release
@@ -360,7 +364,7 @@ const resolveConfig = async (
 
 // ── Run ──────────────────────────────────────────────────────
 
-const runYearlyMode = async (config: PayrollConfig, headless: boolean, svc: typeof craService, flags: { table: boolean; monthTable: boolean; annual: boolean; monthly: boolean }) => {
+const runYearlyMode = async (config: PayrollConfig, headless: boolean, svc: typeof craService, flags: { table: boolean; monthTable: boolean; annual: boolean; monthly: boolean; json: boolean }) => {
   const yearlyResult = await calculateYearly(svc, config, headless);
   if (yearlyResult.isErr()) {
     console.error(`Error: ${yearlyResult.error}`);
@@ -369,8 +373,16 @@ const runYearlyMode = async (config: PayrollConfig, headless: boolean, svc: type
 
   const yearly = yearlyResult.value;
   const periodsPerYear = PAY_PERIOD_COUNTS[config.payPeriod];
-
   const rrspPercent = config.rrspMatchPercent + config.rrspUnmatchedPercent;
+
+  if (flags.json) {
+    // In JSON mode, pick the first matching mode (priority: month-table > table > annual > monthly)
+    const monthlyData = flags.monthTable ? groupByMonth(yearly, config.year, config.payPeriod, periodsPerYear) : undefined;
+    const mode: JsonOutputMode = flags.monthTable ? "month-table" : flags.table ? "table" : flags.annual ? "annual" : "monthly";
+    console.log(JSON.stringify(buildJsonOutput(mode, config, { yearly, monthly: monthlyData }), null, 2));
+    return;
+  }
+
   if (flags.table) console.log(renderTable(yearly, periodsPerYear, config.year, config.province, config.annualSalary, rrspPercent));
   if (flags.monthTable) {
     const monthly = groupByMonth(yearly, config.year, config.payPeriod, periodsPerYear);
@@ -380,11 +392,16 @@ const runYearlyMode = async (config: PayrollConfig, headless: boolean, svc: type
   if (flags.monthly) console.log(renderMonthly(yearly.totals));
 };
 
-const runSingleMode = async (config: PayrollConfig, headless: boolean, svc: typeof craService) => {
+const runSingleMode = async (config: PayrollConfig, headless: boolean, svc: typeof craService, json: boolean) => {
   const calcResult = await svc.calculate(config, headless);
   if (calcResult.isErr()) {
     console.error(`Error: ${calcResult.error}`);
     process.exit(1);
+  }
+
+  if (json) {
+    console.log(JSON.stringify(buildJsonOutput("single", config, { single: calcResult.value }), null, 2));
+    return;
   }
 
   console.log(renderSingleResult(calcResult.value));
@@ -426,13 +443,16 @@ const wantTable = values.table ?? false;
 const wantMonthTable = values["month-table"] ?? false;
 const wantAnnual = values.annual ?? false;
 const wantMonthly = values.monthly ?? false;
+const wantJson = values.json ?? false;
 
-console.log(renderConfig(config, !wantTable && !wantMonthTable && !wantAnnual && !wantMonthly));
-
-if (wantTable || wantMonthTable || wantAnnual || wantMonthly) {
-  await runYearlyMode(config, headless, service, { table: wantTable, monthTable: wantMonthTable, annual: wantAnnual, monthly: wantMonthly });
-} else {
-  await runSingleMode(config, headless, service);
+if (!wantJson) {
+  console.log(renderConfig(config, !wantTable && !wantMonthTable && !wantAnnual && !wantMonthly));
 }
 
-await showUpdateNag();
+if (wantTable || wantMonthTable || wantAnnual || wantMonthly) {
+  await runYearlyMode(config, headless, service, { table: wantTable, monthTable: wantMonthTable, annual: wantAnnual, monthly: wantMonthly, json: wantJson });
+} else {
+  await runSingleMode(config, headless, service, wantJson);
+}
+
+if (!wantJson) await showUpdateNag();
