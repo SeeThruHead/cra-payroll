@@ -7,9 +7,9 @@ import puppeteer, { type Page, type Browser } from "puppeteer-core";
 import { ok, err, type Result, ResultAsync } from "neverthrow";
 import { statSync } from "fs";
 
-const LAUNCH_TIMEOUT = 5_000;
-const PAGE_TIMEOUT = 5_000;
-const ACTION_TIMEOUT = 3_000;
+const LAUNCH_TIMEOUT = 10_000;
+const PAGE_TIMEOUT = 15_000;
+const ACTION_TIMEOUT = 10_000;
 
 let verbose = false;
 export const setVerbose = (v: boolean) => { verbose = v; };
@@ -71,7 +71,7 @@ export interface BrowserSession {
   goto(url: string): Promise<Result<void, string>>;
   waitForPageReady(urlPart: string): Promise<Result<void, string>>;
   waitForText(text: string): Promise<Result<void, string>>;
-  waitForButton(): Promise<Result<void, string>>;
+  waitForButton(textMatch?: string): Promise<Result<void, string>>;
 
   // Form interaction
   clickButton(textMatch: string): Promise<Result<void, string>>;
@@ -178,22 +178,39 @@ const navigationMethods = (page: Page) => ({
       `wait for "${text}"`
     ).map(() => undefined),
 
-  waitForButton: async () =>
-    safe(
-      page.waitForSelector("button", { visible: true, timeout: PAGE_TIMEOUT }),
-      "wait for button"
-    ).map(() => undefined),
+  waitForButton: async (textMatch?: string) => {
+    if (!textMatch) {
+      return safe(
+        page.waitForSelector("button", { visible: true, timeout: PAGE_TIMEOUT }),
+        "wait for button"
+      ).map(() => undefined);
+    }
+    return safe(
+      page.waitForFunction(
+        (text: string) => Array.from(document.querySelectorAll("button"))
+          .some(b => b.textContent?.includes(text)),
+        { timeout: PAGE_TIMEOUT },
+        textMatch
+      ),
+      `wait for button "${textMatch}"`
+    ).map(() => undefined);
+  },
 });
 
 const formMethods = (page: Page) => ({
   clickButton: async (textMatch: string) =>
     safe(
-      page.evaluate((text: string) => {
-        const btn = Array.from(document.querySelectorAll("button"))
-          .find(b => b.textContent?.includes(text));
-        if (!btn) throw new Error(`Button "${text}" not found`);
-        btn.click();
-      }, textMatch),
+      page.waitForFunction(
+        (text: string) => {
+          const btn = Array.from(document.querySelectorAll("button"))
+            .find(b => b.textContent?.includes(text));
+          if (!btn) return false;
+          btn.click();
+          return true;
+        },
+        { timeout: ACTION_TIMEOUT },
+        textMatch
+      ).then(() => {}),
       `click "${textMatch}"`
     ),
 

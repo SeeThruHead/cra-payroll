@@ -17,7 +17,7 @@ const loadEntryPage = async (session: BrowserSession): Promise<Result<void, stri
     async () => {
       const nav = await session.goto(CRA_URL);
       if (nav.isErr()) return nav;
-      return session.waitForButton();
+      return session.waitForButton("Next");
     },
     3, 1000, "entry page"
   );
