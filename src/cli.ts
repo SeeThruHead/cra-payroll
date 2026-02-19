@@ -14,6 +14,8 @@ import { renderMonthlyTable } from "./views/monthlyTable";
 import { groupByMonth } from "./monthly";
 import { renderAnnual, renderMonthly } from "./views/summary";
 import { buildJsonOutput, type JsonOutputMode } from "./views/json";
+import { rrspOptimizerService, rrspOptimizerServiceNoCache, type RrspOptimizerConfig } from "./rrsp-optimizer";
+import { renderRrspAdvice } from "./views/rrsp";
 
 const PROVINCES = [
   "Alberta",
@@ -67,6 +69,11 @@ let values: ReturnType<typeof parseArgs<{
     "no-cache": { type: "boolean"; default: false };
     update: { type: "boolean"; default: false };
     version: { type: "boolean"; default: false };
+    "rrsp-room": { type: "string" };
+    "num-kids-young": { type: "string" };
+    "num-kids-older": { type: "string" };
+    spouse: { type: "boolean"; default: false };
+    "spouse-income": { type: "string" };
     headless: { type: "boolean"; default: false };
     verbose: { type: "boolean"; short: "v"; default: false };
     help: { type: "boolean"; short: "h"; default: false };
@@ -93,6 +100,11 @@ try {
       monthly: { type: "boolean", short: "m", default: false },
       json: { type: "boolean", default: false },
       "no-cache": { type: "boolean", default: false },
+      "rrsp-room": { type: "string" },
+      "num-kids-young": { type: "string" },
+      "num-kids-older": { type: "string" },
+      spouse: { type: "boolean", default: false },
+      "spouse-income": { type: "string" },
       update: { type: "boolean", default: false },
       version: { type: "boolean", default: false },
       headless: { type: "boolean", default: false },
@@ -138,7 +150,12 @@ if (values.help) {
     -a, --annual              Show annualized totals
     -m, --monthly             Show monthly averages
     --json                    Output results as JSON (works with -t, -M, -a, -m, or single)
-    --no-cache                Skip cache and force a fresh CRA lookup
+    --no-cache                Skip cache and force a fresh lookup
+    --rrsp-room <amount>      RRSP contribution room (enables RRSP advice automatically)
+    --num-kids-young <n>      Number of kids 5 and younger (for RRSP advice, default: 0)
+    --num-kids-older <n>      Number of kids 6–17 (for RRSP advice, default: 0)
+    --spouse                  Have a spouse (for RRSP advice)
+    --spouse-income <amount>  Spouse's income (for RRSP advice)
     --headless                Run browser headless (may be blocked by CRA)
     --update                  Self-update to the latest release
     --version                 Show current version
@@ -154,7 +171,8 @@ if (values.help) {
       "rrspMatchPercent": 4,
       "rrspUnmatchedPercent": 0,
       "cppMaxedOut": false,
-      "eiMaxedOut": false
+      "eiMaxedOut": false,
+      "rrspRoom": 50000
     }
 
   You can pipe a config file via stdin, pass one with --config, or place
@@ -282,19 +300,64 @@ const loadFileConfig = async (configFlag: string, isPiped: boolean): Promise<Res
 
 // ── Config resolution ────────────────────────────────────────
 
-const resolveField = async <T>(
-  label: string,
-  cliVal: T | undefined,
-  fileVal: T | undefined,
-  defaultVal: T | undefined,
-  promptFn: (() => Promise<T>) | null,
+const DEFAULTS: PayrollConfig = {
+  province: "Ontario",
+  annualSalary: 0,
+  payPeriod: "Semi-monthly (24 pay periods a year)",
+  year: new Date().getFullYear(),
+  rrspMatchPercent: 4,
+  rrspUnmatchedPercent: 0,
+  cppMaxedOut: false,
+  eiMaxedOut: false,
+};
+
+/** Build a partial config from CLI flags — only includes fields the user explicitly passed. */
+const cliToConfig = (vals: typeof values): Partial<PayrollConfig> => {
+  const cfg: Partial<PayrollConfig> = {};
+  if (vals.province !== undefined) cfg.province = vals.province;
+  if (vals.salary !== undefined) cfg.annualSalary = parseFloat(vals.salary);
+  if (vals["pay-period"] !== undefined) cfg.payPeriod = vals["pay-period"];
+  if (vals.year !== undefined) cfg.year = parseInt(vals.year, 10);
+  if (vals["rrsp-match"] !== undefined) cfg.rrspMatchPercent = parseFloat(vals["rrsp-match"]);
+  if (vals["rrsp-unmatched"] !== undefined) cfg.rrspUnmatchedPercent = parseFloat(vals["rrsp-unmatched"]);
+  if (vals["cpp-maxed"]) cfg.cppMaxedOut = true;
+  if (vals["ei-maxed"]) cfg.eiMaxedOut = true;
+  if (vals["rrsp-room"] !== undefined) cfg.rrspRoom = parseFloat(vals["rrsp-room"]);
+  if (vals["num-kids-young"] !== undefined) cfg.numKids5AndYounger = parseInt(vals["num-kids-young"], 10);
+  if (vals["num-kids-older"] !== undefined) cfg.numKids6AndOlder = parseInt(vals["num-kids-older"], 10);
+  if (vals.spouse) cfg.hasSpouse = true;
+  if (vals["spouse-income"] !== undefined) cfg.spouseIncome = parseFloat(vals["spouse-income"]);
+  return cfg;
+};
+
+/** Prompt for required fields that are still missing after merge. */
+const promptMissing = async (
+  merged: Partial<PayrollConfig>,
   isPiped: boolean,
-): Promise<Result<T, string>> => {
-  if (cliVal !== undefined) return ok(cliVal);
-  if (fileVal !== undefined) return ok(fileVal);
-  if (promptFn && !isPiped) return ok(await promptFn());
-  if (defaultVal !== undefined) return ok(defaultVal);
-  return err(`${label} is required (pass via config or --${label})`);
+): Promise<Result<PayrollConfig, string>> => {
+  let { province, annualSalary, payPeriod, year } = merged as PayrollConfig;
+
+  if (!province && !isPiped) {
+    province = await promptChoice("Province of employment:", PROVINCES, "Ontario");
+  }
+  if (!province) return err("province is required (pass via config or --province)");
+
+  if (!annualSalary && !isPiped) {
+    annualSalary = await promptNumber("Annual salary ($)");
+  }
+  if (!annualSalary) return err("salary is required (pass via config or --salary)");
+
+  if (!payPeriod && !isPiped) {
+    payPeriod = await promptChoice("Pay period:", PAY_PERIODS, "Semi-monthly (24 pay periods a year)");
+  }
+  if (!payPeriod) return err("pay-period is required (pass via config or --pay-period)");
+
+  if (!year && !isPiped) {
+    year = await promptNumber("Tax year", new Date().getFullYear());
+  }
+  if (!year) return err("year is required (pass via config or --year)");
+
+  return ok({ ...merged, province, annualSalary, payPeriod, year } as PayrollConfig);
 };
 
 const resolveConfig = async (
@@ -302,69 +365,14 @@ const resolveConfig = async (
   fileConfig: Partial<PayrollConfig>,
   isPiped: boolean,
 ): Promise<Result<PayrollConfig, string>> => {
-  const province = await resolveField(
-    "province", vals.province, fileConfig.province, "Ontario",
-    () => promptChoice("Province of employment:", PROVINCES, "Ontario"), isPiped,
-  );
-  if (province.isErr()) return err(province.error);
-
-  const year = await resolveField(
-    "year",
-    vals.year !== undefined ? parseInt(vals.year, 10) : undefined,
-    fileConfig.year, new Date().getFullYear(),
-    () => promptNumber("Tax year", new Date().getFullYear()), isPiped,
-  );
-  if (year.isErr()) return err(year.error);
-
-  const salary = await resolveField(
-    "salary",
-    vals.salary !== undefined ? parseFloat(vals.salary) : undefined,
-    fileConfig.annualSalary, undefined,
-    () => promptNumber("Annual salary ($)"), isPiped,
-  );
-  if (salary.isErr()) return err(salary.error);
-
-  const payPeriod = await resolveField(
-    "pay-period", vals["pay-period"], fileConfig.payPeriod,
-    "Semi-monthly (24 pay periods a year)",
-    () => promptChoice("Pay period:", PAY_PERIODS, "Semi-monthly (24 pay periods a year)"), isPiped,
-  );
-  if (payPeriod.isErr()) return err(payPeriod.error);
-
-  const rrspMatch = await resolveField(
-    "rrsp-match",
-    vals["rrsp-match"] !== undefined ? parseFloat(vals["rrsp-match"]) : undefined,
-    fileConfig.rrspMatchPercent, 4,
-    () => promptNumber("RRSP match % (employee + employer both contribute)", 4), isPiped,
-  );
-  if (rrspMatch.isErr()) return err(rrspMatch.error);
-
-  const rrspUnmatched = await resolveField(
-    "rrsp-unmatched",
-    vals["rrsp-unmatched"] !== undefined ? parseFloat(vals["rrsp-unmatched"]) : undefined,
-    fileConfig.rrspUnmatchedPercent, 0,
-    () => promptNumber("Additional unmatched employee RRSP %", 0), isPiped,
-  );
-  if (rrspUnmatched.isErr()) return err(rrspUnmatched.error);
-
-  const cppMaxedOut = vals["cpp-maxed"] === true ? true : (fileConfig.cppMaxedOut ?? false);
-  const eiMaxedOut = vals["ei-maxed"] === true ? true : (fileConfig.eiMaxedOut ?? false);
-
-  return ok({
-    province: province.value,
-    annualSalary: salary.value,
-    payPeriod: payPeriod.value,
-    year: year.value,
-    rrspMatchPercent: rrspMatch.value,
-    rrspUnmatchedPercent: rrspUnmatched.value,
-    cppMaxedOut,
-    eiMaxedOut,
-  });
+  const cliConfig = cliToConfig(vals);
+  const merged: Partial<PayrollConfig> = { ...DEFAULTS, ...fileConfig, ...cliConfig };
+  return promptMissing(merged, isPiped);
 };
 
 // ── Run ──────────────────────────────────────────────────────
 
-const runYearlyMode = async (config: PayrollConfig, headless: boolean, svc: typeof craService, flags: { table: boolean; monthTable: boolean; annual: boolean; monthly: boolean; json: boolean }) => {
+const runYearlyMode = async (config: PayrollConfig, headless: boolean, svc: typeof craService, flags: { table: boolean; monthTable: boolean; annual: boolean; monthly: boolean; json: boolean }, rrspAdvice?: { config: RrspOptimizerConfig; result: import("./rrsp-optimizer").RrspOptimizerResult } | null) => {
   const yearlyResult = await calculateYearly(svc, config, headless);
   if (yearlyResult.isErr()) {
     console.error(`Error: ${yearlyResult.error}`);
@@ -376,10 +384,11 @@ const runYearlyMode = async (config: PayrollConfig, headless: boolean, svc: type
   const rrspPercent = config.rrspMatchPercent + config.rrspUnmatchedPercent;
 
   if (flags.json) {
-    // In JSON mode, pick the first matching mode (priority: month-table > table > annual > monthly)
     const monthlyData = flags.monthTable ? groupByMonth(yearly, config.year, config.payPeriod, periodsPerYear) : undefined;
     const mode: JsonOutputMode = flags.monthTable ? "month-table" : flags.table ? "table" : flags.annual ? "annual" : "monthly";
-    console.log(JSON.stringify(buildJsonOutput(mode, config, { yearly, monthly: monthlyData }), null, 2));
+    const output: any = buildJsonOutput(mode, config, { yearly, monthly: monthlyData });
+    if (rrspAdvice) output.rrspAdvice = rrspAdvice.result;
+    console.log(JSON.stringify(output, null, 2));
     return;
   }
 
@@ -390,9 +399,11 @@ const runYearlyMode = async (config: PayrollConfig, headless: boolean, svc: type
   }
   if (flags.annual) console.log(renderAnnual(yearly.totals));
   if (flags.monthly) console.log(renderMonthly(yearly.totals));
+
+  if (rrspAdvice) console.log(renderRrspAdvice(rrspAdvice.config, rrspAdvice.result));
 };
 
-const runSingleMode = async (config: PayrollConfig, headless: boolean, svc: typeof craService, json: boolean) => {
+const runSingleMode = async (config: PayrollConfig, headless: boolean, svc: typeof craService, json: boolean, rrspAdvice?: { config: RrspOptimizerConfig; result: import("./rrsp-optimizer").RrspOptimizerResult } | null) => {
   const calcResult = await svc.calculate(config, headless);
   if (calcResult.isErr()) {
     console.error(`Error: ${calcResult.error}`);
@@ -400,11 +411,39 @@ const runSingleMode = async (config: PayrollConfig, headless: boolean, svc: type
   }
 
   if (json) {
-    console.log(JSON.stringify(buildJsonOutput("single", config, { single: calcResult.value }), null, 2));
+    const output: any = buildJsonOutput("single", config, { single: calcResult.value });
+    if (rrspAdvice) output.rrspAdvice = rrspAdvice.result;
+    console.log(JSON.stringify(output, null, 2));
     return;
   }
 
   console.log(renderSingleResult(calcResult.value));
+  if (rrspAdvice) console.log(renderRrspAdvice(rrspAdvice.config, rrspAdvice.result));
+};
+
+const fetchRrspAdvice = async (config: PayrollConfig, noCache: boolean) => {
+  if (!config.rrspRoom || config.rrspRoom <= 0) return null;
+
+  const rrspSvc = noCache ? rrspOptimizerServiceNoCache : rrspOptimizerService;
+
+  const rrspConfig: RrspOptimizerConfig = {
+    year: config.year,
+    province: config.province,
+    income: config.annualSalary,
+    rrspRoom: config.rrspRoom,
+    numKids5AndYounger: config.numKids5AndYounger ?? 0,
+    numKids6AndOlder: config.numKids6AndOlder ?? 0,
+    hasSpouse: config.hasSpouse ?? false,
+    spouseIncome: config.spouseIncome ?? null,
+  };
+
+  const result = await rrspSvc.optimize(rrspConfig);
+  if (result.isErr()) {
+    console.error(`⚠️  RRSP advice unavailable: ${result.error}`);
+    return null;
+  }
+
+  return { config: rrspConfig, result: result.value };
 };
 
 const showUpdateNag = async () => {
@@ -449,10 +488,17 @@ if (!wantJson) {
   console.log(renderConfig(config, !wantTable && !wantMonthTable && !wantAnnual && !wantMonthly));
 }
 
+// Fetch RRSP advice in parallel when rrspRoom is configured
+const rrspAdvicePromise = config.rrspRoom
+  ? ((!wantJson && console.error("Fetching RRSP advice from rrspcontribution.ca...")), fetchRrspAdvice(config, values["no-cache"] ?? false))
+  : Promise.resolve(null);
+
 if (wantTable || wantMonthTable || wantAnnual || wantMonthly) {
-  await runYearlyMode(config, headless, service, { table: wantTable, monthTable: wantMonthTable, annual: wantAnnual, monthly: wantMonthly, json: wantJson });
+  const rrspAdvice = await rrspAdvicePromise;
+  await runYearlyMode(config, headless, service, { table: wantTable, monthTable: wantMonthTable, annual: wantAnnual, monthly: wantMonthly, json: wantJson }, rrspAdvice);
 } else {
-  await runSingleMode(config, headless, service, wantJson);
+  const rrspAdvice = await rrspAdvicePromise;
+  await runSingleMode(config, headless, service, wantJson, rrspAdvice);
 }
 
 if (!wantJson) await showUpdateNag();

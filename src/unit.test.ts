@@ -127,7 +127,7 @@ EI deductions 178.62
 Total deductions 4,511.99
 Net amount 6,446.34
 `;
-    const config = { ...BASE_CONFIG, annualSalary: 263000 };
+    const config = { ...BASE_CONFIG, annualSalary: 200000 };
     const result = parseResults(text, config, 24);
     const r = result._unsafeUnwrap();
     expect(r.grossIncome).toBe(10958.33);
@@ -268,7 +268,7 @@ describe("buildYearlyTable", () => {
   });
 
   test("high earner maxes out early", () => {
-    // $263k semi-monthly: CPP 669.42/period, maxes at period 7
+    // $200k semi-monthly: CPP 669.42/period, maxes at period 7
     const highActive: PayrollResult = {
       ...ACTIVE_RESULT,
       grossIncome: 10958.33,
@@ -276,7 +276,7 @@ describe("buildYearlyTable", () => {
       ei: 178.62,
     };
     const highMaxed: PayrollResult = { ...MAXED_RESULT, grossIncome: 10958.33 };
-    const highConfig = { ...BASE_CONFIG, annualSalary: 263000 };
+    const highConfig = { ...BASE_CONFIG, annualSalary: 200000 };
 
     const result = buildYearlyTable(highActive, highMaxed, highConfig, 24);
     // 4230.45 / 669.42 = 6.32 → period 7 partial, 8+ zero

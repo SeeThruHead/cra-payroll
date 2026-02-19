@@ -9,6 +9,16 @@ export interface PayrollConfig {
   rrspUnmatchedPercent: number;
   cppMaxedOut: boolean;
   eiMaxedOut: boolean;
+  /** Available RRSP contribution room — when set, RRSP advice is shown automatically */
+  rrspRoom?: number;
+  /** Number of children aged 5 and younger (affects METR via CCB) */
+  numKids5AndYounger?: number;
+  /** Number of children aged 6–17 (affects METR via CCB) */
+  numKids6AndOlder?: number;
+  /** Whether the filer has a spouse */
+  hasSpouse?: boolean;
+  /** Spouse's income (affects benefit clawbacks) */
+  spouseIncome?: number;
 }
 
 export interface PayrollResult {
