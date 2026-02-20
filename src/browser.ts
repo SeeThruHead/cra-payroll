@@ -216,7 +216,7 @@ const formMethods = (page: Page) => ({
 
   selectByLabel: async (labelMatch: string, optionText: string) =>
     safe(
-      page.evaluate((match: string, text: string) => {
+      page.waitForFunction((match: string, text: string) => {
         const fireChangeEvents = (el: HTMLElement) => {
           el.dispatchEvent(new Event("change", { bubbles: true }));
           el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -230,14 +230,14 @@ const formMethods = (page: Page) => ({
           const title = s.title ?? "";
           if (label.includes(match) || title.includes(match)) {
             const opt = Array.from(s.options).find(o => o.text.includes(text));
-            if (!opt) throw new Error(`Option "${text}" not found in "${match}"`);
+            if (!opt) return false; // not yet — keep polling
             s.value = opt.value;
             fireChangeEvents(s);
-            return;
+            return true;
           }
         }
-        throw new Error(`Select "${match}" not found`);
-      }, labelMatch, optionText),
+        return false; // select not found yet — keep polling
+      }, { timeout: ACTION_TIMEOUT }, labelMatch, optionText).then(() => {}),
       `select ${labelMatch}="${optionText}"`
     ),
 
