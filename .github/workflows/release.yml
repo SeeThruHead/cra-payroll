@@ -10,7 +10,21 @@ permissions:
   packages: write
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install
+      - name: Type check
+        run: bunx tsc --noEmit
+      - name: Unit tests
+        run: bun test src/unit.test.ts src/cache.test.ts src/monthly.test.ts src/views.test.ts src/brackets.test.ts src/json.test.ts
+
   build:
+    needs: check
     strategy:
       matrix:
         include:
