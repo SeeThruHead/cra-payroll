@@ -127,6 +127,18 @@ CLI args override config file values. Missing values are prompted interactively.
 | CPP2 max (additional) | $416.00 |
 | EI max premium | $1,123.07 |
 
+## Docker
+
+No Chrome install needed — everything is bundled in the image.
+
+```bash
+docker run --rm ghcr.io/seethruhead/cra-payroll --salary 100000
+docker run --rm ghcr.io/seethruhead/cra-payroll --salary 150000 --table
+docker run --rm ghcr.io/seethruhead/cra-payroll --salary 120000 --province "British Columbia" --annual --monthly
+```
+
+> **Note:** The image is x86_64 only. On Apple Silicon Macs it runs via Rosetta emulation (slower but works).
+
 ## Run from source
 
 If you'd rather not download a binary, you can clone and run directly. You'll need [Google Chrome](https://www.google.com/chrome/) installed.
