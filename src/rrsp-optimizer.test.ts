@@ -1,4 +1,4 @@
-import { describe, test, expect, mock, afterAll } from "bun:test";
+import { describe, test, expect } from "bun:test";
 import { rrspOptimizerService, rrspOptimizerServiceNoCache, type RrspOptimizerConfig } from "./rrsp-optimizer";
 
 // ── Parsing tests (use the real service for a live integration test) ──

@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterAll } from "bun:test";
-import { mkdtempSync, rmSync, existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from "fs";
+import { mkdtempSync, rmSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { resolve } from "path";
 import { tmpdir } from "os";
 import { ok, err } from "neverthrow";

@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
-import { ok, err, type Result } from "neverthrow";
+import { ok, err } from "neverthrow";
 import { parseResults } from "./parse";
-import { buildYearlyTable, calculateYearly, CPP_MAX_BASE, CPP2_MAX, EI_MAX } from "./yearly";
+import { buildYearlyTable, calculateYearly, CPP_MAX_BASE, EI_MAX } from "./yearly";
 import { PAY_PERIODS, type PayrollConfig, type PayrollResult, type PayrollService } from "./types";
 
 // ── Mock service ────────────────────────────────────────────
@@ -341,8 +341,6 @@ describe("config validation", () => {
   test("rejects unknown pay period via service", async () => {
     const service = mockService({ active: ACTIVE_RESULT, maxed: MAXED_RESULT });
     const config = { ...BASE_CONFIG, payPeriod: "Every full moon" };
-    const result = await service.calculate(config, false);
-    // The service mock doesn't validate, but calculateYearly does
     const yearly = await calculateYearly(service, config, false);
     expect(yearly.isErr()).toBe(true);
   });

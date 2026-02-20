@@ -3,7 +3,7 @@
  * Each step is a function: (session, config) → Result.
  * Reads like a script — no DOM noise.
  */
-import { ok, err, type Result } from "neverthrow";
+import { err, type Result } from "neverthrow";
 import { type BrowserSession, launchSession, retry, log } from "./browser";
 import { PAY_PERIODS, type PayrollConfig, type PayrollResult } from "./types";
 import { parseResults } from "./parse";

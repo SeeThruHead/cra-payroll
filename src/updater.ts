@@ -1,7 +1,6 @@
 import { ok, err, type Result } from "neverthrow";
 import { execSync } from "child_process";
-import { existsSync, mkdirSync, renameSync, unlinkSync, chmodSync } from "fs";
-import { dirname, resolve } from "path";
+import { existsSync, renameSync, unlinkSync, chmodSync } from "fs";
 
 const REPO = "SeeThruHead/cra-payroll";
 

@@ -14,6 +14,7 @@
     "build": "bun build --compile src/cli.ts --outfile cra-payroll --external electron",
     "build:npm": "bun build src/cli.ts --outfile dist/cra-payroll.js --target=node",
     "release": "bash release.sh",
+    "lint": "oxlint src/",
     "typecheck": "tsc --noEmit",
     "test": "bun test src/unit.test.ts src/cache.test.ts src/monthly.test.ts src/views.test.ts src/brackets.test.ts src/json.test.ts",
     "test:integration": "bun test src/integration.test.ts --timeout 120000 --max-concurrency 1",
@@ -38,6 +39,7 @@
   },
   "devDependencies": {
     "@types/bun": "^1.3.8",
+    "oxlint": "^1.49.0",
     "typescript": "^5.9.3"
   }
 }

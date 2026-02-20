@@ -1,5 +1,5 @@
 import * as R from "remeda";
-import { money, line, when, pct } from "./format";
+import { money, line, pct } from "./format";
 import { marginalRate } from "../brackets";
 import type { YearlyResult, PayPeriodRow } from "../yearly";
 

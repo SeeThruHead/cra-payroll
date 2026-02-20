@@ -5,7 +5,7 @@
 import { resolve } from "path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { createHash } from "crypto";
-import { ok, err, type Result } from "neverthrow";
+import { ok } from "neverthrow";
 import type { PayrollConfig, PayrollResult, PayrollService } from "./types";
 import { log } from "./browser";
 

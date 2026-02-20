@@ -54,7 +54,7 @@ const addDays = (d: Date, n: number): Date => {
  * Daily: every weekday starting Jan 1.
  */
 const dailyPayMonths = (year: number, count: number): number[] => {
-  const months = new Array(12).fill(0);
+  const months = Array.from({ length: 12 }, () => 0);
   let d = nextWeekday(new Date(year, 0, 1));
   for (let i = 0; i < count; i++) {
     months[d.getMonth()]++;
@@ -68,7 +68,7 @@ const dailyPayMonths = (year: number, count: number): number[] => {
  * then every N weeks.
  */
 const weeklyPayMonths = (year: number, count: number, everyNWeeks: number): number[] => {
-  const months = new Array(12).fill(0);
+  const months = Array.from({ length: 12 }, () => 0);
   // Find first Friday on or after Jan 1
   let d = new Date(year, 0, 1);
   while (d.getDay() !== 5) d.setDate(d.getDate() + 1);
@@ -82,12 +82,12 @@ const weeklyPayMonths = (year: number, count: number, everyNWeeks: number): numb
 /**
  * Semi-monthly: always 2 per month (1st and 15th).
  */
-const semiMonthlyPayMonths = (): number[] => new Array(12).fill(2);
+const semiMonthlyPayMonths = (): number[] => Array.from({ length: 12 }, () => 2);
 
 /**
  * Monthly: always 1 per month.
  */
-const monthlyPayMonths = (): number[] => new Array(12).fill(1);
+const monthlyPayMonths = (): number[] => Array.from({ length: 12 }, () => 1);
 
 /**
  * For unusual periods (10, 13, 22), distribute as evenly as possible,

@@ -239,13 +239,6 @@ const promptNumber = async (label: string, defaultVal?: number): Promise<number>
   return num;
 };
 
-const promptYesNo = async (label: string, defaultVal: boolean = false): Promise<boolean> => {
-  const defHint = defaultVal ? " [Y/n]" : " [y/N]";
-  const answer = await prompt(`${label}${defHint}: `);
-  if (!answer) return defaultVal;
-  return answer.toLowerCase().startsWith("y");
-};
-
 // ── Config loading ───────────────────────────────────────────
 
 const detectPipedStdin = (): boolean => {

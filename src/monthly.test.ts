@@ -8,13 +8,13 @@ import type { PayrollConfig, PayrollResult } from "./types";
 describe("periodsPerMonth", () => {
   test("semi-monthly is always 2 per month", () => {
     const result = periodsPerMonth(2026, "Semi-monthly (24 pay periods a year)", 24);
-    expect(result).toEqual(new Array(12).fill(2));
+    expect(result).toEqual(Array.from({ length: 12 }, () => 2));
     expect(result.reduce((a, b) => a + b)).toBe(24);
   });
 
   test("monthly is always 1 per month", () => {
     const result = periodsPerMonth(2026, "Monthly (12 pay periods a year)", 12);
-    expect(result).toEqual(new Array(12).fill(1));
+    expect(result).toEqual(Array.from({ length: 12 }, () => 1));
   });
 
   test("weekly (52) sums to 52", () => {

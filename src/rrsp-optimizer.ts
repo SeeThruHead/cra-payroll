@@ -130,9 +130,7 @@ const parseRecommendation = (html: string): Result<{ contribution: number; savin
 
 const parseStepsTable = (html: string): RrspStep[] => {
   const steps: RrspStep[] = [];
-  // Each row: <tr><td>1</td><td>$4,518</td><td>$4,518</td><td>53.5%</td><td>$2,418</td><td>event text</td></tr>
-  const rowRegex = /<tr>\s*(?:<td>\s*(.*?)\s*<\/td>\s*){6}<\/tr>/gs;
-  // Simpler: find all <td> groups after the header
+  // Find all <td> groups after the header
   const tableMatch = html.match(/<table class="table table-striped">([\s\S]*?)<\/table>/);
   if (!tableMatch) return steps;
 
