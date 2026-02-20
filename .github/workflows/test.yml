@@ -17,7 +17,7 @@ jobs:
       - run: bun install
 
       - name: Type check
-        run: bunx tsc --noEmit
+        run: bun run typecheck
 
       - name: Unit tests
-        run: bun test src/unit.test.ts src/cache.test.ts src/monthly.test.ts src/views.test.ts src/brackets.test.ts src/json.test.ts
+        run: bun run test
